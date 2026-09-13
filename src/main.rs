@@ -22,7 +22,7 @@ use webkit6::WebView;
 const CLIENT_ID: &str = "04b07795-8ddb-461a-bbee-02f9e1bf7b46";
 const TENANT: &str = "organizations";
 const SCOPES: &str = "User.ReadWrite.All offline_access";
-const VERSION: &str = "1.0";
+const VERSION: &str = "0.1.0";
 
 #[derive(Deserialize, Debug)]
 #[allow(dead_code)]
