@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=School Passwords Sync
+Comment=Update Microsoft 365 Passwords in bulk
+Exec=schoolpasssync
+Icon=com.github.yucefsourani.schoolpasssync
+Terminal=false
+Type=Application
+Categories=Utility;System;
