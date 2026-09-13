@@ -1,3 +1,4 @@
+#[cfg_attr(windows, windows_subsystem = "windows")]
 mod utils;
 use utils::read_excel_csv::{get_data,FileType};
 use reqwest::Client;
