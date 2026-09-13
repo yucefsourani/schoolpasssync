@@ -4,10 +4,9 @@ on:
   push:
     branches: [ "main" ]
     tags:
-      - 'v*' # تفعيل إنشاء الإصدار عند دفع وسم يبدأ بحرف v
+      - 'v*'
   workflow_dispatch:
 
-# إعطاء GitHub Actions الصلاحية لإنشاء الإصدارات ورفع الملفات
 permissions:
   contents: write
 
@@ -35,6 +34,7 @@ jobs:
             mingw-w64-x86_64-pkgconf
             mingw-w64-x86_64-gtk4
             mingw-w64-x86_64-libadwaita
+            mingw-w64-x86_64-vulkan-loader
 
       - name: Build Project with Meson
         run: |
@@ -46,31 +46,32 @@ jobs:
           mkdir dist
           cp build/src/schoolpasssync.exe dist/
           
-          # نسخ أيقونة PNG الخاصة بواجهة البرنامج
+          # نسخ الأيقونات
           cp src/com.github.yucefsourani.schoolpasssync.png dist/ || cp com.github.yucefsourani.schoolpasssync.png dist/ || echo "PNG Icon not found"
-
-          # نسخ أيقونة ICO الخاصة بنظام ويندوز (سطح المكتب والمثبت)
           cp src/icon.ico dist/ || cp icon.ico dist/ || echo "ICO Icon not found"
 
-          # استخراج مكتبات DLL
+          # استخراج مكتبات DLL الأساسية عبر ldd
           ldd dist/schoolpasssync.exe | grep '\/mingw.*\.dll' -o | xargs -I{} cp {} dist/
           
-          # نسخ Schemas و Icons الأساسية لـ GTK
+          # جلب ونسخ مكتبة Vulkan الحديثة لضمان توافق نقاط الدخول (Entry Points)
+          cp /mingw64/bin/vulkan-1.dll dist/ || true
+          
+          # نسخ Schemas و Icons الخاصة بـ GTK
           mkdir -p dist/share/glib-2.0/schemas
           cp /mingw64/share/glib-2.0/schemas/gschemas.compiled dist/share/glib-2.0/schemas/ || true
           mkdir -p dist/share/icons
           cp -r /mingw64/share/icons/hicolor dist/share/icons/ || true
           cp -r /mingw64/share/icons/Adwaita dist/share/icons/ || true
           
-          # نسخ رخص مكتبات C الأصلية (LGPL) من بيئة MSYS2
+          # نسخ رخص مكتبات C الأصلية
           mkdir -p dist/share/licenses
           cp -r /mingw64/share/licenses/* dist/share/licenses/ || true
           
-          # توليد ملف رخص مكتبات Rust الخارجية تلقائياً
+          # توليد رخص مكتبات Rust
           cargo install cargo-license
           cargo license --authors > dist/THIRD-PARTY-LICENSES.txt
           
-          # التأكد من وجود ملف رخصة البرنامج
+          # نسخ رخصة البرنامج
           if [ -f "LICENSE" ]; then cp LICENSE dist/; else echo "GPL-3.0 License" > dist/LICENSE; fi
 
       - name: Generate Inno Setup Script (.iss)
@@ -113,7 +114,6 @@ jobs:
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
-        # هذه الخطوة ستعمل فقط إذا كان الدفع عبارة عن Tag يبدأ بحرف v
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: out/SchoolPassSync-Windows-Setup.exe
