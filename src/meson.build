@@ -1,7 +1,13 @@
 app_id = 'com.github.yucefsourani.schoolpasssync'
 
+# إعداد أمر Cargo بحيث يفرض واجهة رسومية (بدون DOS) على ويندوز
+if host_machine.system() == 'windows'
+  cargo_cmd = 'RUSTFLAGS="-C link-arg=-mwindows" cargo build --manifest-path "$1" $2 && cp "$3/target/$4/$5" "$6"'
+else
+  cargo_cmd = 'cargo build --manifest-path "$1" $2 && cp "$3/target/$4/$5" "$6"'
+endif
+
 # 1. بناء البرنامج باستخدام Cargo ونسخه إلى مسار المخرجات
-# نستخدم sh -c لضمان عمل الأمر بسلاسة على لينكس وعلى MSYS2 في ويندوز
 custom_target(
   'cargo-build',
   build_by_default: true,
@@ -12,8 +18,7 @@ custom_target(
   install_dir: bindir,
   command: [
     'sh', '-c',
-    # $2 تُترك بدون علامات تنصيص لكي يتجاهلها Bash إذا كانت فارغة في وضع الـ Debug
-    'cargo build --manifest-path "$1" $2 && cp "$3/target/$4/$5" "$6"',
+    cargo_cmd,
     '_', # يمثل $0
     meson.project_source_root() / 'Cargo.toml', # $1
     get_option('buildtype') == 'release' ? '--release' : '', # $2
