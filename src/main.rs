@@ -13,6 +13,8 @@ use std::fs;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+#[cfg(target_os = "windows")]
+use open;
 
 #[cfg(target_os = "linux")]
 use webkit6::prelude::*;
@@ -462,8 +464,10 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
     });
 
     open_browser_btn.connect_clicked(move |_| {
-        let _ = gtk::gio::AppInfo::launch_default_for_uri(&verification_uri, None::<&gtk::gio::AppLaunchContext>);
-    });
+            if let Err(e) = open::that(&verification_uri) {
+                eprintln!("Failed to open browser: {}", e);
+            }
+        });
 
     let toast = adw::Toast::builder()
         .custom_title(&gtk::Label::new(Some("\nانسخ الكود وافتح المتصفح للمصادقة.\n")))
