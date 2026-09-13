@@ -3,7 +3,13 @@ name: Windows Build & Package
 on:
   push:
     branches: [ "main" ]
+    tags:
+      - 'v*' # تفعيل إنشاء الإصدار عند دفع وسم يبدأ بحرف v
   workflow_dispatch:
+
+# إعطاء GitHub Actions الصلاحية لإنشاء الإصدارات ورفع الملفات
+permissions:
+  contents: write
 
 jobs:
   build-windows:
@@ -35,28 +41,38 @@ jobs:
           meson setup build --buildtype=release
           meson compile -C build
 
-      - name: Bundle Executable, DLLs, and Licenses
+      - name: Bundle Executable, DLLs, Licenses, and Icons
         run: |
           mkdir dist
           cp build/src/schoolpasssync.exe dist/
           
+          # نسخ أيقونة PNG الخاصة بواجهة البرنامج
+          cp src/com.github.yucefsourani.schoolpasssync.png dist/ || cp com.github.yucefsourani.schoolpasssync.png dist/ || echo "PNG Icon not found"
+
+          # نسخ أيقونة ICO الخاصة بنظام ويندوز (سطح المكتب والمثبت)
+          cp src/icon.ico dist/ || cp icon.ico dist/ || echo "ICO Icon not found"
+
           # استخراج مكتبات DLL
           ldd dist/schoolpasssync.exe | grep '\/mingw.*\.dll' -o | xargs -I{} cp {} dist/
           
-          # نسخ Schemas و Icons
+          # نسخ Schemas و Icons الأساسية لـ GTK
           mkdir -p dist/share/glib-2.0/schemas
           cp /mingw64/share/glib-2.0/schemas/gschemas.compiled dist/share/glib-2.0/schemas/ || true
           mkdir -p dist/share/icons
           cp -r /mingw64/share/icons/hicolor dist/share/icons/ || true
+          cp -r /mingw64/share/icons/Adwaita dist/share/icons/ || true
           
-          # توليد ملف رخص المكتبات الخارجية تلقائياً
+          # نسخ رخص مكتبات C الأصلية (LGPL) من بيئة MSYS2
+          mkdir -p dist/share/licenses
+          cp -r /mingw64/share/licenses/* dist/share/licenses/ || true
+          
+          # توليد ملف رخص مكتبات Rust الخارجية تلقائياً
           cargo install cargo-license
           cargo license --authors > dist/THIRD-PARTY-LICENSES.txt
           
-          # التأكد من وجود ملف رخصة البرنامج لتجنب فشل Inno Setup
+          # التأكد من وجود ملف رخصة البرنامج
           if [ -f "LICENSE" ]; then cp LICENSE dist/; else echo "GPL-3.0 License" > dist/LICENSE; fi
-          cp -r /mingw64/share/licenses dist/share/ || true
-          
+
       - name: Generate Inno Setup Script (.iss)
         run: |
           cat << 'EOF' > installer.iss
@@ -71,13 +87,14 @@ jobs:
           DisableDirPage=no
           DisableProgramGroupPage=yes
           LicenseFile=dist\LICENSE
+          SetupIconFile=dist\icon.ico
 
           [Files]
           Source: "dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
           [Icons]
-          Name: "{autoprograms}\SchoolPassSync"; Filename: "{app}\schoolpasssync.exe"
-          Name: "{autodesktop}\SchoolPassSync"; Filename: "{app}\schoolpasssync.exe"; Tasks: desktopicon
+          Name: "{autoprograms}\SchoolPassSync"; Filename: "{app}\schoolpasssync.exe"; IconFilename: "{app}\icon.ico"
+          Name: "{autodesktop}\SchoolPassSync"; Filename: "{app}\schoolpasssync.exe"; Tasks: desktopicon; IconFilename: "{app}\icon.ico"
 
           [Tasks]
           Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Additional icons:"
@@ -93,3 +110,11 @@ jobs:
         with:
           name: SchoolPassSync-Setup
           path: out/SchoolPassSync-Windows-Setup.exe
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        # هذه الخطوة ستعمل فقط إذا كان الدفع عبارة عن Tag يبدأ بحرف v
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: out/SchoolPassSync-Windows-Setup.exe
+          generate_release_notes: true
