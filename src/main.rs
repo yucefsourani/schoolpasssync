@@ -135,6 +135,8 @@ fn main() {
         about_dialog.set_license_type(gtk::License::Gpl30);
         about_dialog.set_version(VERSION);
         about_dialog.set_website("https://github.com/yucefsourani/schoolpasssync");
+        about_dialog.set_support_url("https://github.com/yucefsourani/schoolpasssync");
+        about_dialog.set_developers(&["yucef mouhammad nazih sourani"]);
         
         let top_about_button = gtk::Button::from_icon_name("help-about-symbolic");
         top_about_button.connect_clicked(glib::clone!(
@@ -184,6 +186,12 @@ fn main() {
         doc_filter.add_mime_type("application/vnd.ms-excel.sheet.binary.macroEnabled.12");
         doc_filter.add_mime_type("application/vnd.ms-excel");
         doc_filter.add_mime_type("text/csv");
+        doc_filter.add_mime_type("application/vnd.ms-excel.addin.macroEnabled.12");
+        doc_filter.add_mime_type("application/vnd.oasis.opendocument.spreadsheet");
+        doc_filter.add_mime_type("text/x-csv");
+        doc_filter.add_mime_type("application/csv");
+        doc_filter.add_mime_type("text/comma-separated-values");
+        doc_filter.add_mime_type("text/x-comma-separated-values");
         list_filters.append(&doc_filter);
         
         let file_dialog = gtk::FileDialog::builder().filters(&list_filters).modal(true).build();
