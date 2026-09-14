@@ -208,7 +208,7 @@ fn main() {
         loading_vbox.set_halign(gtk::Align::Center);
         let spinner = gtk::Spinner::builder().spinning(true).width_request(50).height_request(50).build();
         loading_vbox.append(&spinner);
-        let loading_label = gtk::Label::new(Some("جاري التحقق من الجلسة..."));
+        let loading_label = gtk::Label::new(Some("جاري التحقق من الجلسة... / Verifying session..."));
         loading_vbox.append(&loading_label);
         main_stack.add_named(&loading_vbox, Some("loading"));
         
@@ -245,7 +245,7 @@ fn main() {
         let file_dialog = gtk::FileDialog::builder().filters(&list_filters).modal(true).build();
 
         let statuspage = adw::StatusPage::builder()
-            .title("Open Excel File")
+            .title("فتح ملف / Open File")
             .description(".xlsx,.xls,.xlsm,csv...")
             .child(&get_file_path_button)
             .icon_name("document-open-symbolic")
@@ -280,11 +280,11 @@ fn main() {
                     if let Ok(file) = result {
                         if let Some(path) = file.path() {
                             let dialog = adw::AlertDialog::builder()
-                                .heading("تحذير: بدء تغيير كلمات المرور")
-                                .body("سيتم الآن تغيير كلمات المرور لجميع الحسابات المدرجة في هذا الملف.\n\nلا يمكن التراجع عن هذه العملية بمجرد بدئها. هل أنت متأكد أنك تريد الاستمرار؟")
+                                .heading("بدء العملية / Start Update")
+                                .body("سيتم تغيير كلمات المرور للحسابات المدرجة. لا يمكن التراجع.\nهل تريد الاستمرار؟\n\nPasswords will be changed for listed accounts. This cannot be undone. Continue?")
                                 .build();
-                            dialog.add_response("cancel", "إلغاء");
-                            dialog.add_response("start", "نعم، ابدأ العملية");
+                            dialog.add_response("cancel", "إلغاء / Cancel");
+                            dialog.add_response("start", "ابدأ / Start");
                             dialog.set_response_appearance("start", adw::ResponseAppearance::Destructive);
                             
                             let client_run = Rc::clone(&client);
@@ -327,16 +327,16 @@ fn main() {
         }
 
         #[cfg(target_os = "windows")]
-        let open_browser_btn = gtk::Button::builder().label("2. فتح صفحة تسجيل الدخول").margin_top(10).css_classes(["pill"]).build();
+        let open_browser_btn = gtk::Button::builder().label("2. فتح المتصفح / Open Browser").margin_top(10).css_classes(["pill"]).build();
         #[cfg(target_os = "windows")]
-        let copy_code_btn = gtk::Button::builder().label("1. نسخ الكود").margin_top(10).css_classes(["pill"]).build();
+        let copy_code_btn = gtk::Button::builder().label("1. نسخ الكود / Copy Code").margin_top(10).css_classes(["pill"]).build();
 
         #[cfg(target_os = "windows")]
         {
             let windows_auth_vbox = gtk::Box::new(gtk::Orientation::Vertical, 10);
             windows_auth_vbox.set_valign(gtk::Align::Center);
             windows_auth_vbox.set_halign(gtk::Align::Center);
-            let label = gtk::Label::new(Some("يرجى نسخ الكود وفتح المتصفح لتسجيل الدخول:"));
+            let label = gtk::Label::new(Some("انسخ الكود وافتح المتصفح لتسجيل الدخول:\nCopy the code and open the browser to login:"));
             windows_auth_vbox.append(&label);
             windows_auth_vbox.append(&entry_row);
             windows_auth_vbox.append(&copy_code_btn);
@@ -371,11 +371,11 @@ fn main() {
 
         top_logout_button.connect_clicked(move |_| {
             let dialog = adw::AlertDialog::builder()
-                .heading("تسجيل الخروج")
-                .body("هل أنت متأكد أنك تريد تسجيل الخروج؟ سيتم حذف بيانات جلستك الحالية والمحفوظة.")
+                .heading("تسجيل الخروج / Logout")
+                .body("هل تريد تسجيل الخروج وحذف بيانات الجلسة؟\n\nAre you sure you want to logout and delete session data?")
                 .build();
-            dialog.add_response("cancel", "إلغاء");
-            dialog.add_response("logout", "تسجيل الخروج");
+            dialog.add_response("cancel", "إلغاء / Cancel");
+            dialog.add_response("logout", "خروج / Logout");
             dialog.set_response_appearance("logout", adw::ResponseAppearance::Destructive);
             
             let client_in = Rc::clone(&client_logout);
@@ -519,7 +519,7 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
                         move |_result| {
                             if let Err(_err)  = _result {
                                 let toast = adw::Toast::builder()
-                                    .title("Load Page Faild.")
+                                    .title("فشل تحميل الصفحة / Page Load Failed.")
                                     .timeout(5)
                                     .build();
                                 c_toastoverlay.add_toast(toast);
@@ -532,7 +532,7 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
     });
     webview.load_uri(&device_res.verification_uri);
     let toast = adw::Toast::builder()
-        .custom_title(&gtk::Label::new(Some("\nIf the code doesn't auto-fill,\n\ncopy it from the field above and paste it into the Code box.\n")))
+        .custom_title(&gtk::Label::new(Some("\nإذا لم يُعبأ الكود تلقائياً، انسخه والصقه في المربع.\nIf code doesn't auto-fill, copy and paste it.\n")))
         .timeout(10)
         .build();
     toastoverlay.add_toast(toast);
@@ -565,16 +565,16 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
             if let Some(refresh_token) = token_res.refresh_token {
                 match save_refresh_token(&refresh_token) {
                     Ok(_) => {
-                        let toast = adw::Toast::builder().title("✅ تم حفظ الجلسة بنجاح").timeout(3).build();
+                        let toast = adw::Toast::builder().title("✅ تم حفظ الجلسة بنجاح / Session saved successfully").timeout(3).build();
                         toastoverlay.add_toast(toast);
                     },
                     Err(e) => {
-                        let toast = adw::Toast::builder().title(&format!("❌ فشل حفظ الجلسة: {}", e)).timeout(10).build();
+                        let toast = adw::Toast::builder().title(&format!("❌ فشل حفظ الجلسة / Failed to save session: {}", e)).timeout(10).build();
                         toastoverlay.add_toast(toast);
                     }
                 }
             } else {
-                let toast = adw::Toast::builder().title("⚠️ الخادم لم يرسل رمز التحديث").timeout(10).build();
+                let toast = adw::Toast::builder().title("⚠️ لم يتم استلام رمز تحديث / No refresh token received").timeout(10).build();
                 toastoverlay.add_toast(toast);
             }
             callback(Some(access_token));
@@ -626,7 +626,7 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
     copy_code_btn.connect_clicked(move |btn| {
         let clipboard = btn.clipboard(); 
         clipboard.set_text(&code);
-        btn.set_label("تم النسخ! ✔");
+        btn.set_label("تم النسخ! / Copied! ✔");
     });
 
     open_browser_btn.connect_clicked(move |_| {
@@ -636,7 +636,7 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
         });
 
     let toast = adw::Toast::builder()
-        .custom_title(&gtk::Label::new(Some("\nانسخ الكود وافتح المتصفح للمصادقة.\n")))
+        .custom_title(&gtk::Label::new(Some("\nانسخ الكود وافتح المتصفح للمصادقة.\nCopy code and open browser to authenticate.\n")))
         .timeout(10)
         .build();
     toastoverlay.add_toast(toast);
@@ -669,16 +669,16 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
             if let Some(refresh_token) = token_res.refresh_token {
                 match save_refresh_token(&refresh_token) {
                     Ok(_) => {
-                        let toast = adw::Toast::builder().title("✅ تم حفظ الجلسة بنجاح").timeout(3).build();
+                        let toast = adw::Toast::builder().title("✅ تم حفظ الجلسة بنجاح / Session saved successfully").timeout(3).build();
                         toastoverlay.add_toast(toast);
                     },
                     Err(e) => {
-                        let toast = adw::Toast::builder().title(&format!("❌ فشل حفظ الجلسة: {}", e)).timeout(10).build();
+                        let toast = adw::Toast::builder().title(&format!("❌ فشل حفظ الجلسة / Failed to save session: {}", e)).timeout(10).build();
                         toastoverlay.add_toast(toast);
                     }
                 }
             } else {
-                let toast = adw::Toast::builder().title("⚠️ الخادم لم يرسل رمز التحديث").timeout(10).build();
+                let toast = adw::Toast::builder().title("⚠️ لم يتم استلام رمز تحديث / No refresh token received").timeout(10).build();
                 toastoverlay.add_toast(toast);
             }
             callback(Some(access_token));
@@ -706,7 +706,7 @@ async fn process_passwords<F: Fn(Option<String>) -> ()>(c1_client: Rc<RefCell<Cl
     let token  = c_token.borrow();
     let mut success_count = 0;
     let mut failed_count = 0;
-    callback(format!("\nبدء عملية التحديث...\n").into());
+    callback(format!("\nبدء التحديث... / Starting update...\n").into());
     for (index, info) in data.into_iter().enumerate() {
         if let Some(email) = info.email && let Some(newpassword) = info.password {
             let current_row = index + 1;
@@ -739,7 +739,7 @@ async fn process_passwords<F: Fn(Option<String>) -> ()>(c1_client: Rc<RefCell<Cl
             let response = response.unwrap();
 
             if response.status().is_success() {
-                callback(format!("✅ نجاح ({}): {}\n", current_row, email).into());
+                callback(format!("✅ نجاح / Success ({}): {}\n", current_row, email).into());
                 success_count += 1;
             } else {
                 let error_json = response.json().await;
@@ -751,8 +751,8 @@ async fn process_passwords<F: Fn(Option<String>) -> ()>(c1_client: Rc<RefCell<Cl
                 let error_json: serde_json::Value = error_json.unwrap();
                 
                 // --- استخراج وعرض تفاصيل الخطأ القادم من Graph API ---
-                let error_msg = error_json["error"]["message"].as_str().unwrap_or("خطأ غير معروف");
-                callback(format!("❌ فشل ({}): {} - السبب: {}\n", current_row, email, error_msg).into());
+                let error_msg = error_json["error"]["message"].as_str().unwrap_or("خطأ غير معروف / Unknown error");
+                callback(format!("❌ فشل / Failed ({}): {} - السبب/Reason: {}\n", current_row, email, error_msg).into());
                 failed_count += 1;
             }
         }
@@ -760,7 +760,7 @@ async fn process_passwords<F: Fn(Option<String>) -> ()>(c1_client: Rc<RefCell<Cl
         sleep(Duration::from_millis(500)).await;
     }
 
-    callback(format!("\n🎯 انتهت العملية. النجاح: {}، الفشل: {}", success_count, failed_count).into());
+    callback(format!("\n🎯 انتهت العملية / Process finished. النجاح/Success: {}، الفشل/Failed: {}", success_count, failed_count).into());
 }
 
 #[allow(dead_code)]
