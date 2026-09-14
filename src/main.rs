@@ -1,18 +1,18 @@
 #![windows_subsystem = "windows"]
 mod utils;
-use utils::read_excel_csv::{get_data,FileType};
+use utils::read_excel_csv::{get_data, FileType};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::time::sleep;
 use adw::prelude::*;
 use gtk::glib;
-use futures::channel;
 use std::path::PathBuf;
 use std::env;
 use std::fs;
 use std::cell::RefCell;
 use std::rc::Rc;
+use keyring::Entry;
 
 #[cfg(target_os = "windows")]
 use open;
@@ -40,6 +40,7 @@ struct DeviceCodeResponse {
 #[derive(Deserialize, Debug)]
 struct TokenResponse {
     access_token: Option<String>,
+    refresh_token: Option<String>,
     error: Option<String>,
 }
 
@@ -62,6 +63,42 @@ struct GraphPayload {
     password_profile: PasswordProfile,
 }
 
+fn save_refresh_token(refresh_token: &str) -> Result<(), keyring::Error> {
+    let entry = Entry::new("SchoolPassSync", "ms_refresh_token")?;
+    entry.set_password(refresh_token)
+}
+
+fn load_refresh_token() -> Option<String> {
+    let entry = Entry::new("SchoolPassSync", "ms_refresh_token").ok()?;
+    entry.get_password().ok()
+}
+
+fn clear_refresh_token() {
+    if let Ok(entry) = Entry::new("SchoolPassSync", "ms_refresh_token") {
+        let _ = entry.delete_password();
+    }
+}
+
+async fn refresh_ms_access_token(client: Rc<RefCell<Client>>, refresh_token: &str) -> Option<String> {
+    let token_url = format!("https://login.microsoftonline.com/{}/oauth2/v2.0/token", TENANT);
+    let params = [
+        ("client_id", CLIENT_ID),
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh_token),
+    ];
+
+    let response = client.borrow().post(&token_url).form(&params).send().await;
+    if let Ok(res) = response {
+        if let Ok(token_res) = res.json::<TokenResponse>().await {
+            if let Some(new_refresh) = &token_res.refresh_token {
+                let _ = save_refresh_token(new_refresh);
+            }
+            return token_res.access_token;
+        }
+    }
+    None
+}
+
 fn main() {
     let tokio_rt = tokio::runtime::Runtime::new().expect("Tokio Runtime Faild.");
     let _guard = tokio_rt.enter();
@@ -69,7 +106,7 @@ fn main() {
     let app = adw::Application::builder().application_id("com.github.yucefsourani.schoolpasssync").build();
     app.connect_activate(|app| {
         let client = Rc::new(RefCell::new(Client::new()));
-        let  token =  Rc::new(RefCell::new(String::new()));
+        let token = Rc::new(RefCell::new(String::new()));
         let mainwindow = adw::ApplicationWindow::builder().application(app).title("SchoolPassSync").build();
         mainwindow.maximize();
 
@@ -89,6 +126,7 @@ fn main() {
         let headerbar = gtk::HeaderBar::new();
         toolbarview.add_top_bar(&headerbar);
         
+        // الأزرار العلوية (About و Logout)
         let about_dialog = adw::AboutDialog::new();
         about_dialog.set_application_icon("com.github.yucefsourani.schoolpasssync");
         about_dialog.set_application_name("SchoolPassSync");
@@ -97,66 +135,65 @@ fn main() {
         about_dialog.set_license_type(gtk::License::Gpl30);
         about_dialog.set_version(VERSION);
         about_dialog.set_website("https://github.com/yucefsourani/schoolpasssync");
-        about_dialog.set_support_url("https://github.com/yucefsourani/schoolpasssync");
-        about_dialog.set_developers(&["yucef mouhammad nazih  sourani"]);
         
         let top_about_button = gtk::Button::from_icon_name("help-about-symbolic");
         top_about_button.connect_clicked(glib::clone!(
             #[strong] about_dialog,
             #[weak] mainwindow,
-            move |_| {
-                about_dialog.present(Some(&mainwindow));
-            }));
+            move |_| { about_dialog.present(Some(&mainwindow)); }
+        ));
+
+        let top_logout_button = gtk::Button::from_icon_name("system-log-out-symbolic");
             
+        // إضافة الأزرار إلى الشريط العلوي (يتم إضافتها من الحافة إلى الداخل)
         headerbar.pack_end(&top_about_button);
+        headerbar.pack_end(&top_logout_button);
         
         let main_stack = adw::ViewStack::new();
         toolbarview.set_content(Some(&main_stack));
 
-        let mainvbox     = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        // 1. واجهة التحميل 
+        let loading_vbox = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        loading_vbox.set_valign(gtk::Align::Center);
+        loading_vbox.set_halign(gtk::Align::Center);
+        let spinner = gtk::Spinner::builder().spinning(true).width_request(50).height_request(50).build();
+        loading_vbox.append(&spinner);
+        let loading_label = gtk::Label::new(Some("جاري التحقق من الجلسة..."));
+        loading_vbox.append(&loading_label);
+        main_stack.add_named(&loading_vbox, Some("loading"));
         
-        let clamp = adw::Clamp::builder()
-                              .maximum_size(600)
-                              .child(&mainvbox)
-                              .build();
+        // 2. الواجهة الرئيسية
+        let mainvbox = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        let clamp = adw::Clamp::builder().maximum_size(600).child(&mainvbox).build();
         
         let get_file_path_button = gtk::Button::builder()
-                                                .label("Open")
-                                                .css_classes(["suggested-action"])
-                                                .width_request(200)
-                                                .height_request(50)
-                                                .hexpand(false)
-                                                .vexpand(false)
-                                                .halign(gtk::Align::Center)
-                                                .build();
+            .label("Open")
+            .css_classes(["suggested-action"])
+            .width_request(200)
+            .height_request(50)
+            .hexpand(false)
+            .vexpand(false)
+            .halign(gtk::Align::Center)
+            .build();
                                                 
         let list_filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
-        let doc_filter    = gtk::FileFilter::new();
+        let doc_filter = gtk::FileFilter::new();
         doc_filter.set_name(Some("Documents"));
         doc_filter.add_mime_type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         doc_filter.add_mime_type("application/vnd.ms-excel.sheet.macroEnabled.12");
         doc_filter.add_mime_type("application/vnd.ms-excel.sheet.binary.macroEnabled.12");
         doc_filter.add_mime_type("application/vnd.ms-excel");
-        doc_filter.add_mime_type("application/vnd.ms-excel.addin.macroEnabled.12");
-        doc_filter.add_mime_type("application/vnd.oasis.opendocument.spreadsheet");
         doc_filter.add_mime_type("text/csv");
-        doc_filter.add_mime_type("text/x-csv");
-        doc_filter.add_mime_type("application/csv");
-        doc_filter.add_mime_type("text/comma-separated-values");
-        doc_filter.add_mime_type("text/x-comma-separated-values");
         list_filters.append(&doc_filter);
         
-        let file_dialog = gtk::FileDialog::builder()
-                                  .filters(&list_filters)
-                                  .modal(true)
-                                  .build();
+        let file_dialog = gtk::FileDialog::builder().filters(&list_filters).modal(true).build();
 
         let statuspage = adw::StatusPage::builder()
-                                        .title("Open Excel File")
-                                        .description(".xlsx,.xls,.xlsm,csv...")
-                                        .child(&get_file_path_button)
-                                        .icon_name("document-open-symbolic")
-                                        .build();
+            .title("Open Excel File")
+            .description(".xlsx,.xls,.xlsm,csv...")
+            .child(&get_file_path_button)
+            .icon_name("document-open-symbolic")
+            .build();
         mainvbox.append(&statuspage);
         
         let sw = gtk::ScrolledWindow::new();
@@ -170,8 +207,9 @@ fn main() {
         sw.set_child(Some(&textview));
         let textbuffer = textview.buffer();
         
+        // حدث فتح الملف مع رسالة تحذيرية قبل بدء تغيير كلمات المرور
         let c1_client = Rc::clone(&client);
-        let c1_token  = Rc::clone(&token);
+        let c1_token = Rc::clone(&token);
         get_file_path_button.connect_clicked(glib::clone!(
             #[strong] file_dialog,
             #[weak] mainwindow,
@@ -180,16 +218,35 @@ fn main() {
                 let client = Rc::clone(&c1_client);
                 let token = Rc::clone(&c1_token);
                 let c_textbuffer = textbuffer.clone();
-                file_dialog.open(Some(&mainwindow),None::<&gtk::gio::Cancellable>,move |result|{
+                let mainwindow_inner = mainwindow.clone();
+                
+                file_dialog.open(Some(&mainwindow), None::<&gtk::gio::Cancellable>, move |result| {
                     if let Ok(file) = result {
                         if let Some(path) = file.path() {
-                            glib::spawn_future_local(async move {
-                                process_passwords(client,token,path,|result|{
-                                    if let Some(msg) = result {
-                                        let mut iter = c_textbuffer.end_iter();
-                                        c_textbuffer.insert(&mut iter,&msg);
-                                    }
-                                }).await;
+                            let dialog = adw::AlertDialog::builder()
+                                .heading("تحذير: بدء تغيير كلمات المرور")
+                                .body("سيتم الآن تغيير كلمات المرور لجميع الحسابات المدرجة في هذا الملف.\n\nلا يمكن التراجع عن هذه العملية بمجرد بدئها. هل أنت متأكد أنك تريد الاستمرار؟")
+                                .build();
+                            dialog.add_response("cancel", "إلغاء");
+                            dialog.add_response("start", "نعم، ابدأ العملية");
+                            dialog.set_response_appearance("start", adw::ResponseAppearance::Destructive);
+                            
+                            let client_run = Rc::clone(&client);
+                            let token_run = Rc::clone(&token);
+                            let textbuffer_run = c_textbuffer.clone();
+                            let path_run = path.clone();
+
+                            dialog.choose(Some(&mainwindow_inner), None::<&gtk::gio::Cancellable>, move |choice| {
+                                if choice == "start" {
+                                    glib::spawn_future_local(async move {
+                                        process_passwords(client_run, token_run, path_run, move |result_msg| {
+                                            if let Some(msg) = result_msg {
+                                                let mut iter = textbuffer_run.end_iter();
+                                                textbuffer_run.insert(&mut iter, &msg);
+                                            }
+                                        }).await;
+                                    });
+                                }
                             });
                         }
                     }
@@ -197,16 +254,8 @@ fn main() {
             }
         ));
         
-        let entry_row = adw::EntryRow::builder()
-                                      .show_apply_button(false)
-                                      .margin_top(5)
-                                      .margin_bottom(5)
-                                      .margin_start(5)
-                                      .margin_end(5)
-                                      .editable(false)
-                                      .build();
-                                          
-        main_stack.add_named(&clamp,Some("mainvbox"));
+        let entry_row = adw::EntryRow::builder().show_apply_button(false).margin_top(5).margin_bottom(5).margin_start(5).margin_end(5).editable(false).build();
+        main_stack.add_named(&clamp, Some("mainvbox"));
 
         #[cfg(target_os = "linux")]
         let webview = WebView::new();
@@ -218,8 +267,7 @@ fn main() {
             webview.set_vexpand(true);
             webview_vbox.append(&entry_row);
             webview_vbox.append(&webview);
-            main_stack.add_named(&webview_vbox,Some("webview"));
-            main_stack.set_visible_child_name("webview");
+            main_stack.add_named(&webview_vbox, Some("webview"));
         }
 
         #[cfg(target_os = "windows")]
@@ -232,74 +280,123 @@ fn main() {
             let windows_auth_vbox = gtk::Box::new(gtk::Orientation::Vertical, 10);
             windows_auth_vbox.set_valign(gtk::Align::Center);
             windows_auth_vbox.set_halign(gtk::Align::Center);
-            
             let label = gtk::Label::new(Some("يرجى نسخ الكود وفتح المتصفح لتسجيل الدخول:"));
-            
             windows_auth_vbox.append(&label);
             windows_auth_vbox.append(&entry_row);
             windows_auth_vbox.append(&copy_code_btn);
             windows_auth_vbox.append(&open_browser_btn);
-
             main_stack.add_named(&windows_auth_vbox, Some("windows_auth"));
-            main_stack.set_visible_child_name("windows_auth");
         }
 
-        let (tx, rx) = channel::oneshot::channel::<Option<String>>();
+        // دالة مركزية (Closure) قابلة لإعادة الاستخدام لمعالجة نجاح المصادقة
         let c2_token = Rc::clone(&token);
-        
-        glib::MainContext::default().spawn_local(glib::clone!(
-            #[strong] main_stack,
-            async move {
-                if let Ok(message) = rx.await {
-                    if let Some(access_token) = message {
-                        let mut token = c2_token.borrow_mut();
-                        *token = access_token;
-                        main_stack.set_visible_child_name("mainvbox");
+        let main_stack_auth = main_stack.clone();
+        let on_auth_success: Rc<dyn Fn(Option<String>)> = Rc::new(move |access_token: Option<String>| {
+            if let Some(at) = access_token {
+                *c2_token.borrow_mut() = at;
+                main_stack_auth.set_visible_child_name("mainvbox");
+            }
+        });
+
+        // حدث زر تسجيل الخروج (Logout)
+        let mainwindow_logout = mainwindow.clone();
+        let main_stack_logout = main_stack.clone();
+        let token_logout = Rc::clone(&token);
+        let client_logout = Rc::clone(&client);
+        let entry_row_logout = entry_row.clone();
+        let toastoverlay_logout = toastoverlay.clone();
+        #[cfg(target_os = "linux")]
+        let webview_logout = webview.clone();
+        #[cfg(target_os = "windows")]
+        let open_browser_btn_logout = open_browser_btn.clone();
+        #[cfg(target_os = "windows")]
+        let copy_code_btn_logout = copy_code_btn.clone();
+        let on_auth_success_logout = Rc::clone(&on_auth_success);
+
+        top_logout_button.connect_clicked(move |_| {
+            let dialog = adw::AlertDialog::builder()
+                .heading("تسجيل الخروج")
+                .body("هل أنت متأكد أنك تريد تسجيل الخروج؟ سيتم حذف بيانات جلستك الحالية والمحفوظة.")
+                .build();
+            dialog.add_response("cancel", "إلغاء");
+            dialog.add_response("logout", "تسجيل الخروج");
+            dialog.set_response_appearance("logout", adw::ResponseAppearance::Destructive);
+            
+            let client_in = Rc::clone(&client_logout);
+            let token_in = Rc::clone(&token_logout);
+            let main_stack_in = main_stack_logout.clone();
+            let entry_row_in = entry_row_logout.clone();
+            let toastoverlay_in = toastoverlay_logout.clone();
+            #[cfg(target_os = "linux")]
+            let webview_in = webview_logout.clone();
+            #[cfg(target_os = "windows")]
+            let open_btn_in = open_browser_btn_logout.clone();
+            #[cfg(target_os = "windows")]
+            let copy_btn_in = copy_code_btn_logout.clone();
+            let auth_cb_in = Rc::clone(&on_auth_success_logout);
+
+            dialog.choose(Some(&mainwindow_logout), None::<&gtk::gio::Cancellable>, move |choice| {
+                if choice == "logout" {
+                    clear_refresh_token();
+                    *token_in.borrow_mut() = String::new();
+                    
+                    #[cfg(target_os = "linux")]
+                    {
+                        main_stack_in.set_visible_child_name("webview");
+                        glib::spawn_future_local(async move {
+                            get_access_token(client_in, webview_in, entry_row_in, toastoverlay_in, move |msg| { auth_cb_in(msg); }).await;
+                        });
+                    }
+                    #[cfg(target_os = "windows")]
+                    {
+                        main_stack_in.set_visible_child_name("windows_auth");
+                        glib::spawn_future_local(async move {
+                            get_access_token(client_in, open_btn_in, copy_btn_in, entry_row_in, toastoverlay_in, move |msg| { auth_cb_in(msg); }).await;
+                        });
                     }
                 }
-        }));
+            });
+        });
+
+        // بدء التشغيل وفحص الجلسة (Initial Auth)
+        main_stack.set_visible_child_name("loading");
         
-        let c2_client = Rc::clone(&client);
-
-        #[cfg(target_os = "linux")]
-        {
-            let webview_clone = webview.clone();
-            glib::spawn_future_local(async move {
-                get_access_token(
-                    c2_client,
-                    webview_clone,
-                    entry_row,
-                    toastoverlay,
-                    move |msg: Option<String>| {
-                        let _ = tx.send(msg);
+        let client_init = Rc::clone(&client);
+        let on_auth_init = Rc::clone(&on_auth_success);
+        
+        glib::spawn_future_local(glib::clone!(
+            #[strong] main_stack,
+            async move {
+                let mut requires_login = true;
+                
+                if let Some(saved_rt) = load_refresh_token() {
+                    if let Some(new_at) = refresh_ms_access_token(Rc::clone(&client_init), &saved_rt).await {
+                        on_auth_init(Some(new_at));
+                        requires_login = false;
+                    } else {
+                        clear_refresh_token();
                     }
-                ).await;
-            });
-        }
+                }
 
-
-        #[cfg(target_os = "windows")]
-        {
-            glib::spawn_future_local(async move {
-                get_access_token(
-                    c2_client,
-                    open_browser_btn,
-                    copy_code_btn,
-                    entry_row,
-                    toastoverlay,
-                    move |msg: Option<String>| {
-                        let _ = tx.send(msg);
+                if requires_login {
+                    #[cfg(target_os = "linux")]
+                    {
+                        main_stack.set_visible_child_name("webview");
+                        get_access_token(client_init, webview, entry_row, toastoverlay, move |msg| { on_auth_init(msg); }).await;
                     }
-                ).await;
-            });
-        }
+                    #[cfg(target_os = "windows")]
+                    {
+                        main_stack.set_visible_child_name("windows_auth");
+                        get_access_token(client_init, open_browser_btn, copy_code_btn, entry_row, toastoverlay, move |msg| { on_auth_init(msg); }).await;
+                    }
+                }
+            }
+        ));
 
         mainwindow.present();
     });
     app.run();
 }
-
-
 
 #[cfg(target_os = "linux")]
 async fn get_access_token<F: FnOnce(Option<String>) -> () >(
@@ -408,6 +505,9 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
         let token_res: TokenResponse = token_res.unwrap();
         
         if let Some(access_token) = token_res.access_token {
+            if let Some(refresh_token) = token_res.refresh_token {
+                let _ = save_refresh_token(&refresh_token);
+            }
             callback(Some(access_token));
             return ;
         } else if let Some(error) = token_res.error {
@@ -420,8 +520,6 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
         }
     }
 }
-
-
 
 #[cfg(target_os = "windows")]
 async fn get_access_token<F: FnOnce(Option<String>) -> () >(
@@ -452,7 +550,6 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
     let device_res: DeviceCodeResponse = device_res.unwrap();
     let interval = Duration::from_secs(device_res.interval);
     
-
     entry_row.set_text(&device_res.user_code);
     let code = String::from(&device_res.user_code);
     let verification_uri = String::from(&device_res.verification_uri);
@@ -461,7 +558,6 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
         let clipboard = btn.clipboard(); 
         clipboard.set_text(&code);
         btn.set_label("تم النسخ! ✔");
-        
     });
 
     open_browser_btn.connect_clicked(move |_| {
@@ -500,6 +596,9 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
         let token_res: TokenResponse = token_res.unwrap();
         
         if let Some(access_token) = token_res.access_token {
+            if let Some(refresh_token) = token_res.refresh_token {
+                let _ = save_refresh_token(&refresh_token);
+            }
             callback(Some(access_token));
             return ;
         } else if let Some(error) = token_res.error {
@@ -599,7 +698,6 @@ fn is_file(path: &str,linux_symlink:bool) -> bool {
             }else {
                 return is_file;
             }
-            
         }
     }
     false
@@ -617,7 +715,6 @@ fn is_dir(path: &str,linux_symlink:bool) -> bool {
             }else {
                 return is_dir;
             }
-            
         }
     }
     false
@@ -637,7 +734,6 @@ fn get_icon_path(icon_name:&str) -> Option<String> {
         if is_file(&icon_name_location,true){
             return Some(icon_name_location);
         }
-        
     }
     None
 }
