@@ -27,6 +27,8 @@ The application extracts data from supported spreadsheet files (Excel/CSV). Your
 **🐧 Linux**
 ![Linux Screenshot 1](Screenshot_l1.png)
 ![Linux Screenshot 2](Screenshot_l2.png)
+![Linux Screenshot 3](Screenshot_l3.png)
+![Linux Screenshot 4](Screenshot_l4.png)
 
 **🪟 Windows**
 ![Windows Screenshot 1](Screenshot_W1.png)
