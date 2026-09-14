@@ -64,30 +64,32 @@ struct GraphPayload {
 }
 
 fn save_refresh_token(refresh_token: &str) -> Result<(), keyring::Error> {
-    // تحديد الحد الأقصى لكل جزء (أقل من حد ويندوز البالغ 2560)
-    let chunk_size = 2000;
-    
-    // تقسيم الرمز الطويل إلى مصفوفة من الأجزاء
-    let chars: Vec<char> = refresh_token.chars().collect();
-    let chunks: Vec<String> = chars.chunks(chunk_size)
-        .map(|c| c.iter().collect())
-        .collect();
+    // 1. تنظيف أي جلسة سابقة لتجنب تراكم أو تداخل البيانات
+    clear_refresh_token();
 
-    // 1. حفظ عدد الأجزاء أولاً كمرجع عند الاسترجاع
+    // 2. استخدام 1000 بايت كحد أقصى (أقل بكثير من قيد النظام 2560)
+    let chunk_size = 1000;
+    
+    // 3. التقسيم الرياضي بناءً على البايتات لضمان الحجم الدقيق
+    let bytes = refresh_token.as_bytes();
+    let chunks: Vec<&[u8]> = bytes.chunks(chunk_size).collect();
+
+    // 4. حفظ عدد الأجزاء
     let count_entry = Entry::new("SchoolPassSync", "ms_refresh_token_count")?;
     count_entry.set_password(&chunks.len().to_string())?;
 
-    // 2. حفظ كل جزء في مدخل منفصل بشكل آمن
+    // 5. حفظ الأجزاء كل على حدة
     for (i, chunk) in chunks.iter().enumerate() {
         let entry = Entry::new("SchoolPassSync", &format!("ms_refresh_token_part_{}", i))?;
-        entry.set_password(chunk)?;
+        // تحويل البايتات إلى نص مجدداً (آمن تماماً لأن التوكن من نوع ASCII)
+        let chunk_str = std::str::from_utf8(chunk).unwrap_or("");
+        entry.set_password(chunk_str)?;
     }
 
     Ok(())
 }
 
 fn load_refresh_token() -> Option<String> {
-    // قراءة عدد الأجزاء المحفوظة
     let count_entry = Entry::new("SchoolPassSync", "ms_refresh_token_count").ok()?;
     let count_str = count_entry.get_password().ok()?;
     let count: usize = count_str.parse().unwrap_or(0);
@@ -97,8 +99,6 @@ fn load_refresh_token() -> Option<String> {
     }
 
     let mut full_token = String::new();
-    
-    // استدعاء الأجزاء ودمجها بالترتيب
     for i in 0..count {
         let entry = Entry::new("SchoolPassSync", &format!("ms_refresh_token_part_{}", i)).ok()?;
         full_token.push_str(&entry.get_password().ok()?);
@@ -108,7 +108,6 @@ fn load_refresh_token() -> Option<String> {
 }
 
 fn clear_refresh_token() {
-    // جلب وحذف جميع الأجزاء المحفوظة
     if let Ok(count_entry) = Entry::new("SchoolPassSync", "ms_refresh_token_count") {
         if let Ok(count_str) = count_entry.get_password() {
             if let Ok(count) = count_str.parse::<usize>() {
@@ -122,7 +121,7 @@ fn clear_refresh_token() {
         let _ = count_entry.delete_password();
     }
     
-    // تنظيف إضافي: مسح المفتاح القديم إن وجد (من التجارب السابقة)
+    // تنظيف المفتاح القديم جداً إن وجد
     if let Ok(old_entry) = Entry::new("SchoolPassSync", "ms_refresh_token") {
         let _ = old_entry.delete_password();
     }
