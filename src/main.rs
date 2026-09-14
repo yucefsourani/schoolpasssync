@@ -504,9 +504,22 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
         
         let token_res: TokenResponse = token_res.unwrap();
         
+        // --- إظهار أخطاء حفظ الجلسة على لينكس ---
         if let Some(access_token) = token_res.access_token {
             if let Some(refresh_token) = token_res.refresh_token {
-                let _ = save_refresh_token(&refresh_token);
+                match save_refresh_token(&refresh_token) {
+                    Ok(_) => {
+                        let toast = adw::Toast::builder().title("✅ تم حفظ الجلسة بنجاح").timeout(3).build();
+                        toastoverlay.add_toast(toast);
+                    },
+                    Err(e) => {
+                        let toast = adw::Toast::builder().title(&format!("❌ فشل حفظ الجلسة: {}", e)).timeout(10).build();
+                        toastoverlay.add_toast(toast);
+                    }
+                }
+            } else {
+                let toast = adw::Toast::builder().title("⚠️ الخادم لم يرسل رمز التحديث").timeout(10).build();
+                toastoverlay.add_toast(toast);
             }
             callback(Some(access_token));
             return ;
@@ -595,9 +608,22 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
         
         let token_res: TokenResponse = token_res.unwrap();
         
+        // --- إظهار أخطاء حفظ الجلسة على ويندوز للتشخيص ---
         if let Some(access_token) = token_res.access_token {
             if let Some(refresh_token) = token_res.refresh_token {
-                let _ = save_refresh_token(&refresh_token);
+                match save_refresh_token(&refresh_token) {
+                    Ok(_) => {
+                        let toast = adw::Toast::builder().title("✅ تم حفظ الجلسة بنجاح").timeout(3).build();
+                        toastoverlay.add_toast(toast);
+                    },
+                    Err(e) => {
+                        let toast = adw::Toast::builder().title(&format!("❌ فشل حفظ الجلسة: {}", e)).timeout(10).build();
+                        toastoverlay.add_toast(toast);
+                    }
+                }
+            } else {
+                let toast = adw::Toast::builder().title("⚠️ الخادم لم يرسل رمز التحديث").timeout(10).build();
+                toastoverlay.add_toast(toast);
             }
             callback(Some(access_token));
             return ;
@@ -667,8 +693,10 @@ async fn process_passwords<F: Fn(Option<String>) -> ()>(c1_client: Rc<RefCell<Cl
                     return ;
                 }
                 let error_json: serde_json::Value = error_json.unwrap();
-                let _error_msg = error_json["error"]["message"].as_str().unwrap_or("خطأ غير معروف");
-                callback(format!("❌ فشل ({}): {}\n", current_row, email).into());
+                
+                // --- استخراج وعرض تفاصيل الخطأ القادم من Graph API ---
+                let error_msg = error_json["error"]["message"].as_str().unwrap_or("خطأ غير معروف");
+                callback(format!("❌ فشل ({}): {} - السبب: {}\n", current_row, email, error_msg).into());
                 failed_count += 1;
             }
         }
