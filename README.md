@@ -31,8 +31,8 @@ The application extracts data from supported spreadsheet files (Excel/CSV). Your
 ![Linux Screenshot 4](Screenshot_l4.png)
 
 **🪟 Windows**
-![Windows Screenshot 1](Screenshot_W1.png)
-![Windows Screenshot 2](Screenshot_W2.png)
+![Windows Screenshot 1](Screenshot_w1.png)
+![Windows Screenshot 2](Screenshot_w2.png)
 
 ### 📥 Installation
 
@@ -79,10 +79,12 @@ sudo meson install -C build
 **🐧 لينكس**
 ![صورة لينكس 1](Screenshot_l1.png)
 ![صورة لينكس 2](Screenshot_l2.png)
+![صورة لينكس 3]( Screenshot_l3.png)
+![صورة لينكس 4](Screenshot_l4.png)
 
 **🪟 ويندوز**
-![صورة ويندوز 1](Screenshot_W1.png)
-![صورة ويندوز 2](Screenshot_W2.png)
+![صورة ويندوز 1](Screenshot_w1.png)
+![صورة ويندوز 2](Screenshot_w2.png)
 
 ### 📥 التنزيل والتثبيت
 
