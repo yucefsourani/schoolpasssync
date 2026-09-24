@@ -1,5 +1,7 @@
 #![windows_subsystem = "windows"]
 mod utils;
+mod gui;
+use gui::simple_import;
 use utils::read_excel_csv::{get_data, FileType};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -25,7 +27,7 @@ use webkit6::WebView;
 const CLIENT_ID: &str = "04b07795-8ddb-461a-bbee-02f9e1bf7b46";
 const TENANT: &str = "organizations";
 const SCOPES: &str = "User.ReadWrite.All offline_access";
-const VERSION: &str = "0.1.1";
+const VERSION: &str = "0.1.2";
 
 #[derive(Deserialize, Debug)]
 #[allow(dead_code)]
@@ -61,6 +63,38 @@ struct PasswordProfile {
 struct GraphPayload {
     #[serde(rename = "passwordProfile")]
     password_profile: PasswordProfile,
+}
+
+pub fn append_markup_with_smart_scroll(text_view: &gtk::TextView, markup_text: &str) {
+    // 1. التحقق من حالة التمرير
+    let is_at_bottom = if let Some(vadj) = text_view.vadjustment() {
+        let max_value = vadj.upper() - vadj.page_size();
+        let current_value = vadj.value();
+        max_value - current_value <= 2.0
+    } else {
+        true
+    };
+
+    // 2. إدراج النص بصيغة Markup
+    let buffer = text_view.buffer();
+    let mut iter = buffer.end_iter();
+    buffer.insert_markup(&mut iter, markup_text);
+
+    // 3. التمرير إذا كان المستخدم عند النهاية
+    if is_at_bottom {
+        let end_iter = buffer.end_iter();
+        buffer.place_cursor(&end_iter);
+        
+        if let Some(mark) = buffer.mark("insert") {
+            text_view.scroll_to_mark(
+                &mark, 
+                0.0, 
+                true, 
+                0.0, 
+                1.0
+            );
+        }
+    }
 }
 
 fn save_refresh_token(refresh_token: &str) -> Result<(), keyring::Error> {
@@ -216,6 +250,7 @@ fn main() {
         let mainvbox = gtk::Box::new(gtk::Orientation::Vertical, 10);
         let clamp = adw::Clamp::builder().maximum_size(600).child(&mainvbox).build();
         
+        let button_vbox = gtk::Box::new(gtk::Orientation::Vertical,10);
         let get_file_path_button = gtk::Button::builder()
             .label("Open")
             .css_classes(["suggested-action"])
@@ -225,6 +260,7 @@ fn main() {
             .vexpand(false)
             .halign(gtk::Align::Center)
             .build();
+        button_vbox.append(&get_file_path_button);
                                                 
         let list_filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
         let doc_filter = gtk::FileFilter::new();
@@ -247,11 +283,23 @@ fn main() {
         let statuspage = adw::StatusPage::builder()
             .title("فتح ملف / Open File")
             .description(".xlsx,.xls,.xlsm,csv...")
-            .child(&get_file_path_button)
+            .child(&button_vbox)
             .icon_name("document-open-symbolic")
             .build();
-        mainvbox.append(&statuspage);
         
+
+        let simple_import_button = gtk::Button::builder()
+            .label("Simple/حساب واحد")
+            .css_classes(["suggested-action"])
+            .width_request(200)
+            .height_request(50)
+            .hexpand(false)
+            .vexpand(false)
+            .halign(gtk::Align::Center)
+            .build();
+        button_vbox.append(&simple_import_button);
+        
+        mainvbox.append(&statuspage);
         let sw = gtk::ScrolledWindow::new();
         mainvbox.append(&sw);
         
@@ -260,20 +308,35 @@ fn main() {
         textview.set_vexpand(true);
         textview.set_editable(false);
         textview.set_direction(gtk::TextDirection::Ltr);
+        textview.set_wrap_mode(gtk::WrapMode::Word);
+        textview.set_margin_bottom(10);
         sw.set_child(Some(&textview));
-        let textbuffer = textview.buffer();
+
+        let client_run = Rc::clone(&client);
+        let token_run = Rc::clone(&token);
+        let textview_run = textview.clone();
+        let simple_import_dialog = simple_import::create_simple_import_dialog(client_run,token_run,textview_run);
+        simple_import_button.connect_clicked(glib::clone!(
+            #[strong]
+            simple_import_dialog,
+            #[strong]
+            mainwindow,
+            move |_| {
+                simple_import_dialog.present(Some(&mainwindow));
+            }
         
+        ));
         // حدث فتح الملف مع رسالة تحذيرية قبل بدء تغيير كلمات المرور
         let c1_client = Rc::clone(&client);
         let c1_token = Rc::clone(&token);
         get_file_path_button.connect_clicked(glib::clone!(
             #[strong] file_dialog,
             #[weak] mainwindow,
-            #[strong] textbuffer,
+            #[strong] textview,
             move |_| {
                 let client = Rc::clone(&c1_client);
                 let token = Rc::clone(&c1_token);
-                let c_textbuffer = textbuffer.clone();
+                let c_textview = textview.clone();
                 let mainwindow_inner = mainwindow.clone();
                 
                 file_dialog.open(Some(&mainwindow), None::<&gtk::gio::Cancellable>, move |result| {
@@ -289,7 +352,7 @@ fn main() {
                             
                             let client_run = Rc::clone(&client);
                             let token_run = Rc::clone(&token);
-                            let textbuffer_run = c_textbuffer.clone();
+                            let textview_run = c_textview.clone();
                             let path_run = path.clone();
 
                             dialog.choose(Some(&mainwindow_inner), None::<&gtk::gio::Cancellable>, move |choice| {
@@ -297,8 +360,7 @@ fn main() {
                                     glib::spawn_future_local(async move {
                                         process_passwords(client_run, token_run, path_run, move |result_msg| {
                                             if let Some(msg) = result_msg {
-                                                let mut iter = textbuffer_run.end_iter();
-                                                textbuffer_run.insert(&mut iter, &msg);
+                                                append_markup_with_smart_scroll(&textview_run,&msg);
                                             }
                                         }).await;
                                     });
@@ -311,6 +373,8 @@ fn main() {
         ));
         
         let entry_row = adw::EntryRow::builder().show_apply_button(false).margin_top(5).margin_bottom(5).margin_start(5).margin_end(5).editable(false).build();
+        let listbox_entry_row = gtk::ListBox::new();
+        listbox_entry_row.append(&entry_row);
         main_stack.add_named(&clamp, Some("mainvbox"));
 
         #[cfg(target_os = "linux")]
@@ -321,7 +385,7 @@ fn main() {
             let webview_vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
             webview.set_hexpand(true);
             webview.set_vexpand(true);
-            webview_vbox.append(&entry_row);
+            webview_vbox.append(&listbox_entry_row);
             webview_vbox.append(&webview);
             main_stack.add_named(&webview_vbox, Some("webview"));
         }
@@ -338,7 +402,7 @@ fn main() {
             windows_auth_vbox.set_halign(gtk::Align::Center);
             let label = gtk::Label::new(Some("انسخ الكود وافتح المتصفح لتسجيل الدخول:\nCopy the code and open the browser to login:"));
             windows_auth_vbox.append(&label);
-            windows_auth_vbox.append(&entry_row);
+            windows_auth_vbox.append(&listbox_entry_row);
             windows_auth_vbox.append(&copy_code_btn);
             windows_auth_vbox.append(&open_browser_btn);
             main_stack.add_named(&windows_auth_vbox, Some("windows_auth"));
@@ -760,6 +824,61 @@ async fn process_passwords<F: Fn(Option<String>) -> ()>(c1_client: Rc<RefCell<Cl
         sleep(Duration::from_millis(500)).await;
     }
 
+    callback(format!("\n🎯 انتهت العملية / Process finished. النجاح/Success: {}، الفشل/Failed: {}", success_count, failed_count).into());
+}
+
+
+
+
+
+async fn simple_process_password<F: Fn(Option<String>) -> ()>(c1_client: Rc<RefCell<Client>>, c_token: Rc<RefCell<String>>, simplerecord: ExcelCsvRecord,callback: F)  {
+
+    let client = c1_client.borrow();
+    let token  = c_token.borrow();
+    let mut success_count = 0;
+    let mut failed_count = 0;
+    let current_row = 1;
+    callback(format!("\nبدء التحديث... / Starting update...\n").into());
+
+    let email = simplerecord.email.trim();
+    let endpoint = format!("https://graph.microsoft.com/v1.0/users/{}", email);
+
+    let payload = GraphPayload {
+        password_profile: PasswordProfile {
+            password: simplerecord.new_password.trim().to_string(),
+            force_change: false,
+        },
+    };
+
+    let response = client.patch(&endpoint)
+        .bearer_auth(&token)
+        .json(&payload)
+        .send()
+        .await;
+    if let Err(_e) = response {
+        println!("{}",_e);
+        callback(None);
+        return ;
+    }
+    let response = response.unwrap();
+
+    if response.status().is_success() {
+        callback(format!("✅ نجاح / Success ({}): {}\n", current_row, email).into());
+        success_count += 1;
+    } else {
+        let error_json = response.json().await;
+        if let Err(_e) = error_json {
+            println!("{}",_e);
+            callback(None);
+            return ;
+        }
+        let error_json: serde_json::Value = error_json.unwrap();
+        
+        // --- استخراج وعرض تفاصيل الخطأ القادم من Graph API ---
+        let error_msg = error_json["error"]["message"].as_str().unwrap_or("خطأ غير معروف / Unknown error");
+        callback(format!("❌ فشل / Failed ({}): {} - السبب/Reason: {}\n", current_row, email, error_msg).into());
+        failed_count += 1;
+    }
     callback(format!("\n🎯 انتهت العملية / Process finished. النجاح/Success: {}، الفشل/Failed: {}", success_count, failed_count).into());
 }
 
