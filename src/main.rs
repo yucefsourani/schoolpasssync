@@ -65,8 +65,7 @@ struct GraphPayload {
     password_profile: PasswordProfile,
 }
 
-pub fn append_markup_with_smart_scroll(text_view: &gtk::TextView, markup_text: &str) {
-    // 1. التحقق من حالة التمرير
+pub fn append_with_smart_scroll(text_view: &gtk::TextView, markup_text: &str) {
     let is_at_bottom = if let Some(vadj) = text_view.vadjustment() {
         let max_value = vadj.upper() - vadj.page_size();
         let current_value = vadj.value();
@@ -75,12 +74,12 @@ pub fn append_markup_with_smart_scroll(text_view: &gtk::TextView, markup_text: &
         true
     };
 
-    // 2. إدراج النص بصيغة Markup
+
     let buffer = text_view.buffer();
     let mut iter = buffer.end_iter();
-    buffer.insert_markup(&mut iter, markup_text);
+    buffer.insert(&mut iter, markup_text);
 
-    // 3. التمرير إذا كان المستخدم عند النهاية
+
     if is_at_bottom {
         let end_iter = buffer.end_iter();
         buffer.place_cursor(&end_iter);
@@ -98,24 +97,17 @@ pub fn append_markup_with_smart_scroll(text_view: &gtk::TextView, markup_text: &
 }
 
 fn save_refresh_token(refresh_token: &str) -> Result<(), keyring::Error> {
-    // 1. تنظيف أي جلسة سابقة لتجنب تراكم أو تداخل البيانات
     clear_refresh_token();
 
-    // 2. استخدام 1000 بايت كحد أقصى (أقل بكثير من قيد النظام 2560)
     let chunk_size = 1000;
-    
-    // 3. التقسيم الرياضي بناءً على البايتات لضمان الحجم الدقيق
     let bytes = refresh_token.as_bytes();
     let chunks: Vec<&[u8]> = bytes.chunks(chunk_size).collect();
 
-    // 4. حفظ عدد الأجزاء
     let count_entry = Entry::new("SchoolPassSync", "ms_refresh_token_count")?;
     count_entry.set_password(&chunks.len().to_string())?;
 
-    // 5. حفظ الأجزاء كل على حدة
     for (i, chunk) in chunks.iter().enumerate() {
         let entry = Entry::new("SchoolPassSync", &format!("ms_refresh_token_part_{}", i))?;
-        // تحويل البايتات إلى نص مجدداً (آمن تماماً لأن التوكن من نوع ASCII)
         let chunk_str = std::str::from_utf8(chunk).unwrap_or("");
         entry.set_password(chunk_str)?;
     }
@@ -155,13 +147,12 @@ fn clear_refresh_token() {
         let _ = count_entry.delete_password();
     }
     
-    // تنظيف المفتاح القديم جداً إن وجد
     if let Ok(old_entry) = Entry::new("SchoolPassSync", "ms_refresh_token") {
         let _ = old_entry.delete_password();
     }
 }
 
-async fn refresh_ms_access_token(client: Rc<RefCell<Client>>, refresh_token: &str) -> Option<String> {
+async fn refresh_ms_access_token(client: Client, refresh_token: &str) -> Option<String> {
     let token_url = format!("https://login.microsoftonline.com/{}/oauth2/v2.0/token", TENANT);
     let params = [
         ("client_id", CLIENT_ID),
@@ -169,7 +160,7 @@ async fn refresh_ms_access_token(client: Rc<RefCell<Client>>, refresh_token: &st
         ("refresh_token", refresh_token),
     ];
 
-    let response = client.borrow().post(&token_url).form(&params).send().await;
+    let response = client.post(&token_url).form(&params).send().await;
     if let Ok(res) = response {
         if let Ok(token_res) = res.json::<TokenResponse>().await {
             if let Some(new_refresh) = &token_res.refresh_token {
@@ -187,8 +178,9 @@ fn main() {
     
     let app = adw::Application::builder().application_id("com.github.yucefsourani.schoolpasssync").build();
     app.connect_activate(|app| {
-        let client = Rc::new(RefCell::new(Client::new()));
+        let client = Client::new();
         let token = Rc::new(RefCell::new(String::new()));
+        
         let mainwindow = adw::ApplicationWindow::builder().application(app).title("SchoolPassSync").build();
         mainwindow.maximize();
 
@@ -208,7 +200,6 @@ fn main() {
         let headerbar = gtk::HeaderBar::new();
         toolbarview.add_top_bar(&headerbar);
         
-        // الأزرار العلوية (About و Logout)
         let about_dialog = adw::AboutDialog::new();
         about_dialog.set_application_icon("com.github.yucefsourani.schoolpasssync");
         about_dialog.set_application_name("SchoolPassSync");
@@ -229,14 +220,12 @@ fn main() {
 
         let top_logout_button = gtk::Button::from_icon_name("system-log-out-symbolic");
             
-        // إضافة الأزرار إلى الشريط العلوي (يتم إضافتها من الحافة إلى الداخل)
         headerbar.pack_end(&top_about_button);
         headerbar.pack_end(&top_logout_button);
         
         let main_stack = adw::ViewStack::new();
         toolbarview.set_content(Some(&main_stack));
 
-        // 1. واجهة التحميل 
         let loading_vbox = gtk::Box::new(gtk::Orientation::Vertical, 10);
         loading_vbox.set_valign(gtk::Align::Center);
         loading_vbox.set_halign(gtk::Align::Center);
@@ -246,7 +235,6 @@ fn main() {
         loading_vbox.append(&loading_label);
         main_stack.add_named(&loading_vbox, Some("loading"));
         
-        // 2. الواجهة الرئيسية
         let mainvbox = gtk::Box::new(gtk::Orientation::Vertical, 10);
         let clamp = adw::Clamp::builder().maximum_size(600).child(&mainvbox).build();
         
@@ -287,7 +275,6 @@ fn main() {
             .icon_name("document-open-symbolic")
             .build();
         
-
         let simple_import_button = gtk::Button::builder()
             .label("Simple/حساب واحد")
             .css_classes(["suggested-action"])
@@ -312,30 +299,29 @@ fn main() {
         textview.set_margin_bottom(10);
         sw.set_child(Some(&textview));
 
-        let client_run = Rc::clone(&client);
+
+        let client_run = client.clone();
         let token_run = Rc::clone(&token);
         let textview_run = textview.clone();
-        let simple_import_dialog = simple_import::create_simple_import_dialog(client_run,token_run,textview_run);
+        
+        let simple_import_dialog = simple_import::create_simple_import_dialog(client_run, token_run, textview_run);
         simple_import_button.connect_clicked(glib::clone!(
-            #[strong]
-            simple_import_dialog,
-            #[strong]
-            mainwindow,
+            #[strong] simple_import_dialog,
+            #[strong] mainwindow,
             move |_| {
                 simple_import_dialog.present(Some(&mainwindow));
             }
-        
         ));
-        // حدث فتح الملف مع رسالة تحذيرية قبل بدء تغيير كلمات المرور
-        let c1_client = Rc::clone(&client);
+
+        let c1_client = client.clone();
         let c1_token = Rc::clone(&token);
         get_file_path_button.connect_clicked(glib::clone!(
             #[strong] file_dialog,
             #[weak] mainwindow,
             #[strong] textview,
             move |_| {
-                let client = Rc::clone(&c1_client);
-                let token = Rc::clone(&c1_token);
+                let client_inner = c1_client.clone();
+                let token_inner = Rc::clone(&c1_token);
                 let c_textview = textview.clone();
                 let mainwindow_inner = mainwindow.clone();
                 
@@ -350,8 +336,8 @@ fn main() {
                             dialog.add_response("start", "ابدأ / Start");
                             dialog.set_response_appearance("start", adw::ResponseAppearance::Destructive);
                             
-                            let client_run = Rc::clone(&client);
-                            let token_run = Rc::clone(&token);
+                            let client_run = client_inner.clone();
+                            let token_run = Rc::clone(&token_inner);
                             let textview_run = c_textview.clone();
                             let path_run = path.clone();
 
@@ -360,7 +346,7 @@ fn main() {
                                     glib::spawn_future_local(async move {
                                         process_passwords(client_run, token_run, path_run, move |result_msg| {
                                             if let Some(msg) = result_msg {
-                                                append_markup_with_smart_scroll(&textview_run,&msg);
+                                                append_with_smart_scroll(&textview_run, &msg);
                                             }
                                         }).await;
                                     });
@@ -408,7 +394,6 @@ fn main() {
             main_stack.add_named(&windows_auth_vbox, Some("windows_auth"));
         }
 
-        // دالة مركزية (Closure) قابلة لإعادة الاستخدام لمعالجة نجاح المصادقة
         let c2_token = Rc::clone(&token);
         let main_stack_auth = main_stack.clone();
         let on_auth_success: Rc<dyn Fn(Option<String>)> = Rc::new(move |access_token: Option<String>| {
@@ -418,11 +403,13 @@ fn main() {
             }
         });
 
-        // حدث زر تسجيل الخروج (Logout)
         let mainwindow_logout = mainwindow.clone();
         let main_stack_logout = main_stack.clone();
         let token_logout = Rc::clone(&token);
-        let client_logout = Rc::clone(&client);
+        
+
+        let client_logout = client.clone();
+        
         let entry_row_logout = entry_row.clone();
         let toastoverlay_logout = toastoverlay.clone();
         #[cfg(target_os = "linux")]
@@ -442,7 +429,7 @@ fn main() {
             dialog.add_response("logout", "خروج / Logout");
             dialog.set_response_appearance("logout", adw::ResponseAppearance::Destructive);
             
-            let client_in = Rc::clone(&client_logout);
+            let client_in = client_logout.clone();
             let token_in = Rc::clone(&token_logout);
             let main_stack_in = main_stack_logout.clone();
             let entry_row_in = entry_row_logout.clone();
@@ -478,10 +465,9 @@ fn main() {
             });
         });
 
-        // بدء التشغيل وفحص الجلسة (Initial Auth)
         main_stack.set_visible_child_name("loading");
         
-        let client_init = Rc::clone(&client);
+        let client_init = client.clone();
         let on_auth_init = Rc::clone(&on_auth_success);
         
         glib::spawn_future_local(glib::clone!(
@@ -490,7 +476,7 @@ fn main() {
                 let mut requires_login = true;
                 
                 if let Some(saved_rt) = load_refresh_token() {
-                    if let Some(new_at) = refresh_ms_access_token(Rc::clone(&client_init), &saved_rt).await {
+                    if let Some(new_at) = refresh_ms_access_token(client_init.clone(), &saved_rt).await {
                         on_auth_init(Some(new_at));
                         requires_login = false;
                     } else {
@@ -520,7 +506,7 @@ fn main() {
 
 #[cfg(target_os = "linux")]
 async fn get_access_token<F: FnOnce(Option<String>) -> () >(
-    c2_client: Rc<RefCell<Client>>,
+    client: Client, 
     webview: WebView,
     entry_row: adw::EntryRow,
     toastoverlay: adw::ToastOverlay,
@@ -530,7 +516,6 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
     let token_url = format!("https://login.microsoftonline.com/{}/oauth2/v2.0/token", TENANT);
     let params = [("client_id", CLIENT_ID), ("scope", SCOPES)];
 
-    let client = c2_client.borrow();
     let device_res = client.post(&device_code_url).form(&params).send().await;
         
     if let Err(_e) = device_res {
@@ -624,7 +609,6 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
         
         let token_res: TokenResponse = token_res.unwrap();
         
-        // --- إظهار أخطاء حفظ الجلسة على لينكس ---
         if let Some(access_token) = token_res.access_token {
             if let Some(refresh_token) = token_res.refresh_token {
                 match save_refresh_token(&refresh_token) {
@@ -656,7 +640,7 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
 
 #[cfg(target_os = "windows")]
 async fn get_access_token<F: FnOnce(Option<String>) -> () >(
-    c2_client: Rc<RefCell<Client>>,
+    client: Client, 
     open_browser_btn: gtk::Button,
     copy_code_btn: gtk::Button,
     entry_row: adw::EntryRow,
@@ -667,7 +651,6 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
     let token_url = format!("https://login.microsoftonline.com/{}/oauth2/v2.0/token", TENANT);
     let params = [("client_id", CLIENT_ID), ("scope", SCOPES)];
 
-    let client = c2_client.borrow();
     let device_res = client.post(&device_code_url).form(&params).send().await;
         
     if let Err(_e) = device_res {
@@ -728,7 +711,6 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
         
         let token_res: TokenResponse = token_res.unwrap();
         
-        // --- إظهار أخطاء حفظ الجلسة على ويندوز للتشخيص ---
         if let Some(access_token) = token_res.access_token {
             if let Some(refresh_token) = token_res.refresh_token {
                 match save_refresh_token(&refresh_token) {
@@ -758,7 +740,12 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
     }
 }
 
-async fn process_passwords<F: Fn(Option<String>) -> ()>(c1_client: Rc<RefCell<Client>>, c_token: Rc<RefCell<String>>, file_path: PathBuf,callback: F)  {
+async fn process_passwords<F: Fn(Option<String>) -> ()>(
+    client: Client, 
+    c_token: Rc<RefCell<String>>, 
+    file_path: PathBuf,
+    callback: F
+) {
     let data = get_data(&file_path,FileType::Auto);
     if let Err(_e) = data {
         println!("{}",_e);
@@ -766,8 +753,7 @@ async fn process_passwords<F: Fn(Option<String>) -> ()>(c1_client: Rc<RefCell<Cl
         return ;
     }
     let data = data.unwrap();
-    let client = c1_client.borrow();
-    let token  = c_token.borrow();
+    let token  = c_token.borrow().clone();  
     let mut success_count = 0;
     let mut failed_count = 0;
     callback(format!("\nبدء التحديث... / Starting update...\n").into());
@@ -814,7 +800,6 @@ async fn process_passwords<F: Fn(Option<String>) -> ()>(c1_client: Rc<RefCell<Cl
                 }
                 let error_json: serde_json::Value = error_json.unwrap();
                 
-                // --- استخراج وعرض تفاصيل الخطأ القادم من Graph API ---
                 let error_msg = error_json["error"]["message"].as_str().unwrap_or("خطأ غير معروف / Unknown error");
                 callback(format!("❌ فشل / Failed ({}): {} - السبب/Reason: {}\n", current_row, email, error_msg).into());
                 failed_count += 1;
@@ -827,14 +812,13 @@ async fn process_passwords<F: Fn(Option<String>) -> ()>(c1_client: Rc<RefCell<Cl
     callback(format!("\n🎯 انتهت العملية / Process finished. النجاح/Success: {}، الفشل/Failed: {}", success_count, failed_count).into());
 }
 
-
-
-
-
-async fn simple_process_password<F: Fn(Option<String>) -> ()>(c1_client: Rc<RefCell<Client>>, c_token: Rc<RefCell<String>>, simplerecord: ExcelCsvRecord,callback: F)  {
-
-    let client = c1_client.borrow();
-    let token  = c_token.borrow();
+async fn simple_process_password<F: Fn(Option<String>) -> ()>(
+    client: Client, 
+    c_token: Rc<RefCell<String>>, 
+    simplerecord: ExcelCsvRecord,
+    callback: F
+) {
+    let token  = c_token.borrow().clone();
     let mut success_count = 0;
     let mut failed_count = 0;
     let current_row = 1;
@@ -874,7 +858,6 @@ async fn simple_process_password<F: Fn(Option<String>) -> ()>(c1_client: Rc<RefC
         }
         let error_json: serde_json::Value = error_json.unwrap();
         
-        // --- استخراج وعرض تفاصيل الخطأ القادم من Graph API ---
         let error_msg = error_json["error"]["message"].as_str().unwrap_or("خطأ غير معروف / Unknown error");
         callback(format!("❌ فشل / Failed ({}): {} - السبب/Reason: {}\n", current_row, email, error_msg).into());
         failed_count += 1;
