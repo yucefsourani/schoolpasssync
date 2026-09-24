@@ -65,35 +65,22 @@ struct GraphPayload {
     password_profile: PasswordProfile,
 }
 
-pub fn append_with_smart_scroll(text_view: &gtk::TextView, markup_text: &str) {
-    let is_at_bottom = if let Some(vadj) = text_view.vadjustment() {
-        let max_value = vadj.upper() - vadj.page_size();
-        let current_value = vadj.value();
-        max_value - current_value <= 2.0
-    } else {
-        true
-    };
-
-
+pub fn append_with_smart_scroll(text_view: &gtk::TextView, text: &str) {
     let buffer = text_view.buffer();
     let mut iter = buffer.end_iter();
-    buffer.insert(&mut iter, markup_text);
+    buffer.insert(&mut iter, text);
 
-
-    if is_at_bottom {
-        let end_iter = buffer.end_iter();
-        buffer.place_cursor(&end_iter);
+    let tv = text_view.clone();
+    glib::idle_add_local(move || {
+        let buffer = tv.buffer();
+        let mut iter = buffer.end_iter();
+        buffer.place_cursor(&iter);
         
         if let Some(mark) = buffer.mark("insert") {
-            text_view.scroll_to_mark(
-                &mark, 
-                0.0, 
-                true, 
-                0.0, 
-                1.0
-            );
+            tv.scroll_to_mark(&mark, 0.0, true, 0.0, 1.0);
         }
-    }
+        glib::ControlFlow::Break
+    });
 }
 
 fn save_refresh_token(refresh_token: &str) -> Result<(), keyring::Error> {
@@ -304,12 +291,18 @@ fn main() {
         let token_run = Rc::clone(&token);
         let textview_run = textview.clone();
         
-        let simple_import_dialog = simple_import::create_simple_import_dialog(client_run, token_run, textview_run);
+        let client_for_simple = client.clone();
+        let token_for_simple = Rc::clone(&token);
+        let textview_for_simple = textview.clone();
         simple_import_button.connect_clicked(glib::clone!(
-            #[strong] simple_import_dialog,
             #[strong] mainwindow,
             move |_| {
-                simple_import_dialog.present(Some(&mainwindow));
+                let dialog = simple_import::create_simple_import_dialog(
+                    client_for_simple.clone(), 
+                    token_for_simple.clone(), 
+                    textview_for_simple.clone()
+                );
+                dialog.present(Some(&mainwindow));
             }
         ));
 
