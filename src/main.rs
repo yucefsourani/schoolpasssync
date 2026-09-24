@@ -72,12 +72,9 @@ pub fn append_with_smart_scroll(text_view: &gtk::TextView, text: &str) {
 
     let tv = text_view.clone();
     glib::idle_add_local(move || {
-        let buffer = tv.buffer();
-        let mut iter = buffer.end_iter();
-        buffer.place_cursor(&iter);
-        
-        if let Some(mark) = buffer.mark("insert") {
-            tv.scroll_to_mark(&mark, 0.0, true, 0.0, 1.0);
+        if let Some(vadj) = tv.vadjustment() {
+            let max_value = vadj.upper() - vadj.page_size();
+            vadj.set_value(max_value);
         }
         glib::ControlFlow::Break
     });
@@ -85,7 +82,6 @@ pub fn append_with_smart_scroll(text_view: &gtk::TextView, text: &str) {
 
 fn save_refresh_token(refresh_token: &str) -> Result<(), keyring::Error> {
     clear_refresh_token();
-
     let chunk_size = 1000;
     let bytes = refresh_token.as_bytes();
     let chunks: Vec<&[u8]> = bytes.chunks(chunk_size).collect();
@@ -98,7 +94,6 @@ fn save_refresh_token(refresh_token: &str) -> Result<(), keyring::Error> {
         let chunk_str = std::str::from_utf8(chunk).unwrap_or("");
         entry.set_password(chunk_str)?;
     }
-
     Ok(())
 }
 
@@ -107,16 +102,13 @@ fn load_refresh_token() -> Option<String> {
     let count_str = count_entry.get_password().ok()?;
     let count: usize = count_str.parse().unwrap_or(0);
 
-    if count == 0 {
-        return None;
-    }
+    if count == 0 { return None; }
 
     let mut full_token = String::new();
     for i in 0..count {
         let entry = Entry::new("SchoolPassSync", &format!("ms_refresh_token_part_{}", i)).ok()?;
         full_token.push_str(&entry.get_password().ok()?);
     }
-
     Some(full_token)
 }
 
@@ -133,7 +125,6 @@ fn clear_refresh_token() {
         }
         let _ = count_entry.delete_password();
     }
-    
     if let Ok(old_entry) = Entry::new("SchoolPassSync", "ms_refresh_token") {
         let _ = old_entry.delete_password();
     }
@@ -245,12 +236,6 @@ fn main() {
         doc_filter.add_mime_type("application/vnd.ms-excel.sheet.binary.macroEnabled.12");
         doc_filter.add_mime_type("application/vnd.ms-excel");
         doc_filter.add_mime_type("text/csv");
-        doc_filter.add_mime_type("application/vnd.ms-excel.addin.macroEnabled.12");
-        doc_filter.add_mime_type("application/vnd.oasis.opendocument.spreadsheet");
-        doc_filter.add_mime_type("text/x-csv");
-        doc_filter.add_mime_type("application/csv");
-        doc_filter.add_mime_type("text/comma-separated-values");
-        doc_filter.add_mime_type("text/x-comma-separated-values");
         list_filters.append(&doc_filter);
         
         let file_dialog = gtk::FileDialog::builder().filters(&list_filters).modal(true).build();
@@ -282,27 +267,21 @@ fn main() {
         textview.set_vexpand(true);
         textview.set_editable(false);
         textview.set_direction(gtk::TextDirection::Ltr);
-        textview.set_wrap_mode(gtk::WrapMode::Word);
-        textview.set_margin_bottom(10);
         sw.set_child(Some(&textview));
-
 
         let client_run = client.clone();
         let token_run = Rc::clone(&token);
         let textview_run = textview.clone();
         
-        let client_for_simple = client.clone();
-        let token_for_simple = Rc::clone(&token);
-        let textview_for_simple = textview.clone();
         simple_import_button.connect_clicked(glib::clone!(
             #[strong] mainwindow,
             move |_| {
-                let dialog = simple_import::create_simple_import_dialog(
-                    client_for_simple.clone(), 
-                    token_for_simple.clone(), 
-                    textview_for_simple.clone()
+                let simple_import_dialog = simple_import::create_simple_import_dialog(
+                    client_run.clone(),
+                    token_run.clone(),
+                    textview_run.clone()
                 );
-                dialog.present(Some(&mainwindow));
+                simple_import_dialog.present(Some(&mainwindow));
             }
         ));
 
@@ -399,10 +378,7 @@ fn main() {
         let mainwindow_logout = mainwindow.clone();
         let main_stack_logout = main_stack.clone();
         let token_logout = Rc::clone(&token);
-        
-
         let client_logout = client.clone();
-        
         let entry_row_logout = entry_row.clone();
         let toastoverlay_logout = toastoverlay.clone();
         #[cfg(target_os = "linux")]
@@ -499,7 +475,7 @@ fn main() {
 
 #[cfg(target_os = "linux")]
 async fn get_access_token<F: FnOnce(Option<String>) -> () >(
-    client: Client, 
+    client: Client,
     webview: WebView,
     entry_row: adw::EntryRow,
     toastoverlay: adw::ToastOverlay,
@@ -511,15 +487,9 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
 
     let device_res = client.post(&device_code_url).form(&params).send().await;
         
-    if let Err(_e) = device_res {
-        callback(None);
-        return;
-    }
+    if let Err(_e) = device_res { callback(None); return; }
     let device_res = device_res.unwrap().json().await;
-    if let Err(_e) = device_res {
-        callback(None);
-        return;
-    }
+    if let Err(_e) = device_res { callback(None); return; }
     
     let device_res: DeviceCodeResponse = device_res.unwrap();
     let interval = Duration::from_secs(device_res.interval);
@@ -540,43 +510,26 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
                                 var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
                                 nativeInputValueSetter.call(input, '{}');
                                 input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                
                                 var nextBtn = document.getElementById('idSIButton9');
-                                if (nextBtn) {{
-                                    nextBtn.click();
-                                }}
-                                
+                                if (nextBtn) {{ nextBtn.click(); }}
                                 clearInterval(checkExist);
                             }}
                         }}, 500);
-                        "#,
-                        code
+                        "#, code
                     );
                     let c_toastoverlay = clone_toastoverlay.clone();
-                    wv.evaluate_javascript(
-                        &js_code,
-                        None,
-                        None,
-                        None::<&gtk::gio::Cancellable>,
-                        move |_result| {
-                            if let Err(_err)  = _result {
-                                let toast = adw::Toast::builder()
-                                    .title("فشل تحميل الصفحة / Page Load Failed.")
-                                    .timeout(5)
-                                    .build();
-                                c_toastoverlay.add_toast(toast);
-                            }
+                    wv.evaluate_javascript(&js_code, None, None, None::<&gtk::gio::Cancellable>, move |_result| {
+                        if let Err(_err)  = _result {
+                            let toast = adw::Toast::builder().title("فشل تحميل الصفحة / Page Load Failed.").timeout(5).build();
+                            c_toastoverlay.add_toast(toast);
                         }
-                    );
+                    });
                 }
             }
         }
     });
     webview.load_uri(&device_res.verification_uri);
-    let toast = adw::Toast::builder()
-        .custom_title(&gtk::Label::new(Some("\nإذا لم يُعبأ الكود تلقائياً، انسخه والصقه في المربع.\nIf code doesn't auto-fill, copy and paste it.\n")))
-        .timeout(10)
-        .build();
+    let toast = adw::Toast::builder().custom_title(&gtk::Label::new(Some("\nإذا لم يُعبأ الكود تلقائياً، انسخه والصقه في المربع.\nIf code doesn't auto-fill, copy and paste it.\n"))).timeout(10).build();
     toastoverlay.add_toast(toast);
 
     loop {
@@ -588,52 +541,29 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
         ];
 
         let token_res  = client.post(&token_url).form(&token_params).send().await;
-        
-        if let Err(_e) = token_res {
-            callback(None);
-            return ;
-        }
-        
+        if let Err(_e) = token_res { callback(None); return ; }
         let token_res = token_res.unwrap().json().await;
-        if let Err(_e) = token_res {
-            callback(None);
-            return ;
-        }
-        
+        if let Err(_e) = token_res { callback(None); return ; }
         let token_res: TokenResponse = token_res.unwrap();
         
         if let Some(access_token) = token_res.access_token {
             if let Some(refresh_token) = token_res.refresh_token {
                 match save_refresh_token(&refresh_token) {
-                    Ok(_) => {
-                        let toast = adw::Toast::builder().title("✅ تم حفظ الجلسة بنجاح / Session saved successfully").timeout(3).build();
-                        toastoverlay.add_toast(toast);
-                    },
-                    Err(e) => {
-                        let toast = adw::Toast::builder().title(&format!("❌ فشل حفظ الجلسة / Failed to save session: {}", e)).timeout(10).build();
-                        toastoverlay.add_toast(toast);
-                    }
+                    Ok(_) => { toastoverlay.add_toast(adw::Toast::builder().title("✅ تم حفظ الجلسة بنجاح").timeout(3).build()); },
+                    Err(e) => { toastoverlay.add_toast(adw::Toast::builder().title(&format!("❌ فشل حفظ الجلسة: {}", e)).timeout(10).build()); }
                 }
-            } else {
-                let toast = adw::Toast::builder().title("⚠️ لم يتم استلام رمز تحديث / No refresh token received").timeout(10).build();
-                toastoverlay.add_toast(toast);
             }
             callback(Some(access_token));
             return ;
         } else if let Some(error) = token_res.error {
-            if error == "authorization_pending" {
-                continue;
-            } else {
-                callback(None);
-                return;
-            }
+            if error == "authorization_pending" { continue; } else { callback(None); return; }
         }
     }
 }
 
 #[cfg(target_os = "windows")]
 async fn get_access_token<F: FnOnce(Option<String>) -> () >(
-    client: Client, 
+    client: Client,
     open_browser_btn: gtk::Button,
     copy_code_btn: gtk::Button,
     entry_row: adw::EntryRow,
@@ -645,16 +575,9 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
     let params = [("client_id", CLIENT_ID), ("scope", SCOPES)];
 
     let device_res = client.post(&device_code_url).form(&params).send().await;
-        
-    if let Err(_e) = device_res {
-        callback(None);
-        return;
-    }
+    if let Err(_e) = device_res { callback(None); return; }
     let device_res = device_res.unwrap().json().await;
-    if let Err(_e) = device_res {
-        callback(None);
-        return;
-    }
+    if let Err(_e) = device_res { callback(None); return; }
     
     let device_res: DeviceCodeResponse = device_res.unwrap();
     let interval = Duration::from_secs(device_res.interval);
@@ -670,15 +593,10 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
     });
 
     open_browser_btn.connect_clicked(move |_| {
-            if let Err(e) = open::that(&verification_uri) {
-                eprintln!("Failed to open browser: {}", e);
-            }
-        });
+        if let Err(e) = open::that(&verification_uri) { eprintln!("Failed to open browser: {}", e); }
+    });
 
-    let toast = adw::Toast::builder()
-        .custom_title(&gtk::Label::new(Some("\nانسخ الكود وافتح المتصفح للمصادقة.\nCopy code and open browser to authenticate.\n")))
-        .timeout(10)
-        .build();
+    let toast = adw::Toast::builder().custom_title(&gtk::Label::new(Some("\nانسخ الكود وافتح المتصفح للمصادقة.\nCopy code and open browser to authenticate.\n"))).timeout(10).build();
     toastoverlay.add_toast(toast);
 
     loop {
@@ -690,45 +608,22 @@ async fn get_access_token<F: FnOnce(Option<String>) -> () >(
         ];
 
         let token_res  = client.post(&token_url).form(&token_params).send().await;
-        
-        if let Err(_e) = token_res {
-            callback(None);
-            return ;
-        }
-        
+        if let Err(_e) = token_res { callback(None); return ; }
         let token_res = token_res.unwrap().json().await;
-        if let Err(_e) = token_res {
-            callback(None);
-            return ;
-        }
-        
+        if let Err(_e) = token_res { callback(None); return ; }
         let token_res: TokenResponse = token_res.unwrap();
         
         if let Some(access_token) = token_res.access_token {
             if let Some(refresh_token) = token_res.refresh_token {
                 match save_refresh_token(&refresh_token) {
-                    Ok(_) => {
-                        let toast = adw::Toast::builder().title("✅ تم حفظ الجلسة بنجاح / Session saved successfully").timeout(3).build();
-                        toastoverlay.add_toast(toast);
-                    },
-                    Err(e) => {
-                        let toast = adw::Toast::builder().title(&format!("❌ فشل حفظ الجلسة / Failed to save session: {}", e)).timeout(10).build();
-                        toastoverlay.add_toast(toast);
-                    }
+                    Ok(_) => { toastoverlay.add_toast(adw::Toast::builder().title("✅ تم حفظ الجلسة بنجاح").timeout(3).build()); },
+                    Err(e) => { toastoverlay.add_toast(adw::Toast::builder().title(&format!("❌ فشل حفظ الجلسة: {}", e)).timeout(10).build()); }
                 }
-            } else {
-                let toast = adw::Toast::builder().title("⚠️ لم يتم استلام رمز تحديث / No refresh token received").timeout(10).build();
-                toastoverlay.add_toast(toast);
             }
             callback(Some(access_token));
             return ;
         } else if let Some(error) = token_res.error {
-            if error == "authorization_pending" {
-                continue;
-            } else {
-                callback(None);
-                return;
-            }
+            if error == "authorization_pending" { continue; } else { callback(None); return; }
         }
     }
 }
@@ -754,14 +649,9 @@ async fn process_passwords<F: Fn(Option<String>) -> ()>(
         if let Some(email) = info.email && let Some(newpassword) = info.password {
             let current_row = index + 1;
             
-            let record = ExcelCsvRecord {
-                email: email,
-                new_password: newpassword,
-            };
-
+            let record = ExcelCsvRecord { email: email, new_password: newpassword };
             let email = record.email.trim();
             let endpoint = format!("https://graph.microsoft.com/v1.0/users/{}", email);
-
             let payload = GraphPayload {
                 password_profile: PasswordProfile {
                     password: record.new_password.trim().to_string(),
@@ -769,11 +659,7 @@ async fn process_passwords<F: Fn(Option<String>) -> ()>(
                 },
             };
 
-            let response = client.patch(&endpoint)
-                .bearer_auth(&token)
-                .json(&payload)
-                .send()
-                .await;
+            let response = client.patch(&endpoint).bearer_auth(&token).json(&payload).send().await;
             if let Err(_e) = response {
                 println!("{}",_e);
                 callback(None);
@@ -792,68 +678,12 @@ async fn process_passwords<F: Fn(Option<String>) -> ()>(
                     return ;
                 }
                 let error_json: serde_json::Value = error_json.unwrap();
-                
                 let error_msg = error_json["error"]["message"].as_str().unwrap_or("خطأ غير معروف / Unknown error");
                 callback(format!("❌ فشل / Failed ({}): {} - السبب/Reason: {}\n", current_row, email, error_msg).into());
                 failed_count += 1;
             }
         }
-
         sleep(Duration::from_millis(500)).await;
-    }
-
-    callback(format!("\n🎯 انتهت العملية / Process finished. النجاح/Success: {}، الفشل/Failed: {}", success_count, failed_count).into());
-}
-
-async fn simple_process_password<F: Fn(Option<String>) -> ()>(
-    client: Client, 
-    c_token: Rc<RefCell<String>>, 
-    simplerecord: ExcelCsvRecord,
-    callback: F
-) {
-    let token  = c_token.borrow().clone();
-    let mut success_count = 0;
-    let mut failed_count = 0;
-    let current_row = 1;
-    callback(format!("\nبدء التحديث... / Starting update...\n").into());
-
-    let email = simplerecord.email.trim();
-    let endpoint = format!("https://graph.microsoft.com/v1.0/users/{}", email);
-
-    let payload = GraphPayload {
-        password_profile: PasswordProfile {
-            password: simplerecord.new_password.trim().to_string(),
-            force_change: false,
-        },
-    };
-
-    let response = client.patch(&endpoint)
-        .bearer_auth(&token)
-        .json(&payload)
-        .send()
-        .await;
-    if let Err(_e) = response {
-        println!("{}",_e);
-        callback(None);
-        return ;
-    }
-    let response = response.unwrap();
-
-    if response.status().is_success() {
-        callback(format!("✅ نجاح / Success ({}): {}\n", current_row, email).into());
-        success_count += 1;
-    } else {
-        let error_json = response.json().await;
-        if let Err(_e) = error_json {
-            println!("{}",_e);
-            callback(None);
-            return ;
-        }
-        let error_json: serde_json::Value = error_json.unwrap();
-        
-        let error_msg = error_json["error"]["message"].as_str().unwrap_or("خطأ غير معروف / Unknown error");
-        callback(format!("❌ فشل / Failed ({}): {} - السبب/Reason: {}\n", current_row, email, error_msg).into());
-        failed_count += 1;
     }
     callback(format!("\n🎯 انتهت العملية / Process finished. النجاح/Success: {}، الفشل/Failed: {}", success_count, failed_count).into());
 }
@@ -869,15 +699,8 @@ fn get_exe_dir() -> Option<PathBuf> {
 fn is_file(path: &str,linux_symlink:bool) -> bool {
     if let Ok(metadata) = fs::metadata(path) {
         let is_file = metadata.file_type().is_file() ;
-        if linux_symlink == true {
-            return is_file;
-        } else {
-            if metadata.file_type().is_symlink() {
-                return false;
-            }else {
-                return is_file;
-            }
-        }
+        if linux_symlink == true { return is_file; } 
+        else { return if metadata.file_type().is_symlink() { false } else { is_file }; }
     }
     false
 }
@@ -886,15 +709,8 @@ fn is_file(path: &str,linux_symlink:bool) -> bool {
 fn is_dir(path: &str,linux_symlink:bool) -> bool {
     if let Ok(metadata) = fs::metadata(path) {
         let is_dir = metadata.file_type().is_dir() ;
-        if linux_symlink == true {
-            return is_dir;
-        } else {
-            if metadata.file_type().is_symlink() {
-                return false;
-            }else {
-                return is_dir;
-            }
-        }
+        if linux_symlink == true { return is_dir; } 
+        else { return if metadata.file_type().is_symlink() { false } else { is_dir }; }
     }
     false
 }
@@ -910,9 +726,7 @@ fn join_paths(dir: &str, file: &str) -> String {
 fn get_icon_path(icon_name:&str) -> Option<String> {
     if let Some(location)  = get_icons_location(){
         let icon_name_location = join_paths(&location,icon_name);
-        if is_file(&icon_name_location,true){
-            return Some(icon_name_location);
-        }
+        if is_file(&icon_name_location,true){ return Some(icon_name_location); }
     }
     None
 }
@@ -921,18 +735,13 @@ fn get_icon_path(icon_name:&str) -> Option<String> {
 fn get_icons_location() -> Option<String>  {
     if let Some(mut dir) = get_exe_dir() {
         let mut clone_dir = dir.clone();
-        
         dir.push("../../images");
         let dir = dir.to_string_lossy().into_owned();
-        if is_dir(&dir,true) {
-            return Some(dir);
-        }
+        if is_dir(&dir,true) { return Some(dir); }
 
         clone_dir.push("../share/schoolpasssync/images");
         let clone_dir = clone_dir.to_string_lossy().into_owned();
-        if is_dir(&clone_dir,true) {
-            return Some(clone_dir);
-        }
+        if is_dir(&clone_dir,true) { return Some(clone_dir); }
         return None;
     }
     None
