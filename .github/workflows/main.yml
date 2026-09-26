@@ -49,7 +49,7 @@ jobs:
           cp build/src/schoolpasssync.exe dist/
           
           # نسخ الأيقونات
-          cp src/com.github.yobscfsourani.schoolpasssync.png dist/ || echo "PNG Icon not found"
+          cp src/com.github.yucefsourani.schoolpasssync.png dist/ || echo "PNG Icon not found"
           cp icon.ico dist/ || echo "ICO Icon not found"
 
           # ---------------------------------------------------------
