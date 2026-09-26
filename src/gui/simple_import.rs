@@ -4,10 +4,9 @@ use crate::simple_process_password;
 use crate::append_with_smart_scroll;
 use std::cell::RefCell;
 use std::rc::Rc;
-use reqwest::Client;
+
 
 pub fn create_simple_import_dialog(
-    client: Client,
     token: Rc<RefCell<String>>,
     textview: gtk::TextView,
 ) -> adw::Dialog {
@@ -90,7 +89,6 @@ pub fn create_simple_import_dialog(
         #[strong] email_row,
         #[strong] pass_row,
         #[strong] repass_row,
-        #[strong] client,
         #[strong] token,
         move |button| {
             let email = email_row.text().to_string();
@@ -121,7 +119,6 @@ pub fn create_simple_import_dialog(
             alert_dialog.add_response("start", "ابدأ / Start");
             alert_dialog.set_response_appearance("start", adw::ResponseAppearance::Destructive);
             
-            let client_run = client.clone();
             let token_run = Rc::clone(&token);
             let textview_run = textview.clone();
             let dialog_run = dialog.clone();
@@ -136,7 +133,7 @@ pub fn create_simple_import_dialog(
                 if choice == "start" {
                     dialog_run.close(); 
                     glib::spawn_future_local(async move {
-                        simple_process_password(client_run, token_run, record, move |result_msg| {
+                        simple_process_password(token_run, record, move |result_msg| {
                             if let Some(msg) = result_msg {
                                 append_with_smart_scroll(&textview_run, &msg);
                             }
