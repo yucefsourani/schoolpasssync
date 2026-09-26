@@ -25,16 +25,17 @@ jobs:
       - name: Setup MSYS2 & Install Dependencies
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: ucrt64
           update: true
           install: >-
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-rust
-            mingw-w64-x86_64-meson
-            mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-gtk4
-            mingw-w64-x86_64-libadwaita
-            mingw-w64-x86_64-vulkan-loader
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-rust
+            mingw-w64-ucrt-x86_64-meson
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-libadwaita
+            mingw-w64-ucrt-x86_64-libsoup3
+            mingw-w64-ucrt-x86_64-vulkan-loader
 
       - name: Build Project with Meson
         run: |
@@ -79,7 +80,7 @@ jobs:
           cat << 'EOF' > installer.iss
           [Setup]
           AppName=SchoolPassSync
-          AppVersion=0.1.0
+          AppVersion=0.1.2
           DefaultDirName={autopf}\SchoolPassSync
           OutputDir=out
           OutputBaseFilename=SchoolPassSync-Windows-Setup
