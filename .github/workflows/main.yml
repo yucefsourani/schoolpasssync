@@ -48,25 +48,25 @@ jobs:
           cp build/src/schoolpasssync.exe dist/
           
           # نسخ الأيقونات
-          cp src/com.github.yucefsourani.schoolpasssync.png dist/ || cp com.github.yucefsourani.schoolpasssync.png dist/ || echo "PNG Icon not found"
-          cp src/icon.ico dist/ || cp icon.ico dist/ || echo "ICO Icon not found"
+          cp src/com.github.yucefsourani.schoolpasssync.png dist/ || echo "PNG Icon not found"
+          cp icon.ico dist/ || echo "ICO Icon not found"
 
           # استخراج مكتبات DLL الأساسية عبر ldd
-          ldd dist/schoolpasssync.exe | grep '\/mingw.*\.dll' -o | xargs -I{} cp {} dist/
+          ldd dist/schoolpasssync.exe | grep '\/ucrt64.*\.dll' -o | xargs -I{} cp {} dist/
           
           # جلب ونسخ مكتبة Vulkan الحديثة لضمان توافق نقاط الدخول (Entry Points)
-          cp /mingw64/bin/vulkan-1.dll dist/ || true
+          cp /ucrt64/bin/vulkan-1.dll dist/ || true
           
           # نسخ Schemas و Icons الخاصة بـ GTK
           mkdir -p dist/share/glib-2.0/schemas
-          cp /mingw64/share/glib-2.0/schemas/gschemas.compiled dist/share/glib-2.0/schemas/ || true
+          cp /ucrt64/share/glib-2.0/schemas/gschemas.compiled dist/share/glib-2.0/schemas/ || true
           mkdir -p dist/share/icons
-          cp -r /mingw64/share/icons/hicolor dist/share/icons/ || true
-          cp -r /mingw64/share/icons/Adwaita dist/share/icons/ || true
+          cp -r /ucrt64/share/icons/hicolor dist/share/icons/ || true
+          cp -r /ucrt64/share/icons/Adwaita dist/share/icons/ || true
           
           # نسخ رخص مكتبات C الأصلية
           mkdir -p dist/share/licenses
-          cp -r /mingw64/share/licenses/* dist/share/licenses/ || true
+          cp -r /ucrt64/share/licenses/* dist/share/licenses/ || true
           
           # توليد رخص مكتبات Rust
           cargo install cargo-license
