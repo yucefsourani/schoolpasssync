@@ -25,7 +25,7 @@ jobs:
       - name: Setup MSYS2 & Install Dependencies
         uses: msys2/setup-msys2@v2
         with:
-          msystem: ucrt64
+          msystem: UCRT64
           update: true
           install: >-
             mingw-w64-ucrt-x86_64-toolchain
