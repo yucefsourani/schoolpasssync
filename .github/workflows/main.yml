@@ -36,6 +36,7 @@ jobs:
             mingw-w64-ucrt-x86_64-libadwaita
             mingw-w64-ucrt-x86_64-libsoup3
             mingw-w64-ucrt-x86_64-vulkan-loader
+            mingw-w64-ucrt-x86_64-glib-networking
 
       - name: Build Project with Meson
         run: |
@@ -48,12 +49,23 @@ jobs:
           cp build/src/schoolpasssync.exe dist/
           
           # نسخ الأيقونات
-          cp src/com.github.yucefsourani.schoolpasssync.png dist/ || echo "PNG Icon not found"
+          cp src/com.github.yobscfsourani.schoolpasssync.png dist/ || echo "PNG Icon not found"
           cp icon.ico dist/ || echo "ICO Icon not found"
 
-          # استخراج مكتبات DLL الأساسية عبر ldd
-          ldd dist/schoolpasssync.exe | grep '\/ucrt64.*\.dll' -o | xargs -I{} cp {} dist/
+          # ---------------------------------------------------------
+          # التعديل الجديد: نسخ وحدات GIO المسؤولة عن الشبكات و TLS
+          # ---------------------------------------------------------
+          mkdir -p dist/lib/gio/modules
+          cp /ucrt64/lib/gio/modules/*.dll dist/lib/gio/modules/ || true
+          cp /ucrt64/lib/gio/modules/giomodule.cache dist/lib/gio/modules/ || true
           
+          # استخراج مكتبات DLL الأساسية للملف التنفيذي (أضفنا -n لمنع الاستبدال غير الضروري)
+          ldd dist/schoolpasssync.exe | grep '\/ucrt64.*\.dll' -o | xargs -I{} cp -n {} dist/ || true
+          
+          # استخراج مكتبات DLL التي تعتمد عليها وحدات GIO (مثل مكتبات التشفير GnuTLS)
+          ldd dist/lib/gio/modules/*.dll | grep '\/ucrt64.*\.dll' -o | xargs -I{} cp -n {} dist/ || true
+          # ---------------------------------------------------------
+
           # جلب ونسخ مكتبة Vulkan الحديثة لضمان توافق نقاط الدخول (Entry Points)
           cp /ucrt64/bin/vulkan-1.dll dist/ || true
           
