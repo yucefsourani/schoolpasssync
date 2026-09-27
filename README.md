@@ -33,6 +33,7 @@ The application extracts data from supported spreadsheet files (Excel/CSV). Your
 **🪟 Windows**
 ![Windows Screenshot 1](Screenshot_w1.png)
 ![Windows Screenshot 2](Screenshot_w2.png)
+![Windows Screenshot 2](Screenshot_w3.png)
 
 ### 📥 Installation
 
@@ -52,7 +53,7 @@ sudo meson install -C build
 * Installation via Copr is coming soon!
 
 **🪟 Windows**
-* [Download SchoolPassSync for Windows (.exe)](https://github.com/yucefsourani/schoolpasssync/releases/download/v0.1.1/SchoolPassSync-Windows-Setup.exe) *(v0.1.1)*
+* [Download SchoolPassSync for Windows (.exe)](https://github.com/yucefsourani/schoolpasssync/releases/download/v0.1.2/SchoolPassSync-Windows-Setup.exe) *(v0.1.2)*
 
 ---
 
@@ -85,6 +86,7 @@ sudo meson install -C build
 **🪟 ويندوز**
 ![صورة ويندوز 1](Screenshot_w1.png)
 ![صورة ويندوز 2](Screenshot_w2.png)
+![صورة ويندوز 2](Screenshot_w3.png)
 
 ### 📥 التنزيل والتثبيت
 
@@ -104,6 +106,6 @@ sudo meson install -C build
 * قريباً! (قيد التحضير)
 
 **🪟 ويندوز**
-* [تنزيل البرنامج لنظام ويندوز (.exe)](https://github.com/yucefsourani/schoolpasssync/releases/download/v0.1.1/SchoolPassSync-Windows-Setup.exe) *(v0.1.1)*
+* [تنزيل البرنامج لنظام ويندوز (.exe)](https://github.com/yucefsourani/schoolpasssync/releases/download/v0.1.2/SchoolPassSync-Windows-Setup.exe) *(v0.1.2)*
 
 </div>
