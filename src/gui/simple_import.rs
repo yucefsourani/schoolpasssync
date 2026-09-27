@@ -135,7 +135,11 @@ pub fn create_simple_import_dialog(
                     glib::spawn_future_local(async move {
                         simple_process_password(token_run, record, move |result_msg| {
                             if let Some(msg) = result_msg {
-                                append_with_smart_scroll(&textview_run, &msg);
+                                let textview_in = textview_run.clone();
+                                glib::idle_add_local(move || {
+                                    append_with_smart_scroll(&textview_in, &msg);
+                                    glib::ControlFlow::Break 
+                                });
                             }
                         }).await;
                     });
