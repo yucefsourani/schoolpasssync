@@ -22,6 +22,8 @@ use webkit6::prelude::*;
 #[cfg(target_os = "linux")]
 use webkit6::WebView;
 
+#[cfg(target_os = "windows")]
+use open;
 
 #[cfg(target_os = "linux")]
 pub async fn get_access_token<F: FnOnce(Option<String>) -> () >(
@@ -147,7 +149,7 @@ pub async fn get_access_token<F: FnOnce(Option<String>) -> () >(
                     }
                 }
             } else {
-                let toast = adw::Toast::builder().title("⚠️ لم يتم استلام رمز تحديث / No refresh token received").timeout(10).build();
+                let toast = adw::Toast::builder().title(" ⚠️  لم يتم استلام رمز تحديث / No refresh token received").timeout(10).build();
                 toastoverlay.add_toast(toast);
             }
             callback(Some(access_token));
@@ -183,6 +185,7 @@ pub async fn get_access_token<F: FnOnce(Option<String>) -> () >(
     
     let device_res = session.send_and_read_future(&message,soup::glib::Priority::default()).await;
     if let Err(_e) = device_res {
+        println!("{:?}",_e);
         callback(None);
         return;
     }
@@ -200,6 +203,7 @@ pub async fn get_access_token<F: FnOnce(Option<String>) -> () >(
     let code = String::from(&device_res.user_code);
     let verification_uri = String::from(&device_res.verification_uri);
 
+
     copy_code_btn.connect_clicked(move |btn| {
         let clipboard = btn.clipboard(); 
         clipboard.set_text(&code);
@@ -212,11 +216,17 @@ pub async fn get_access_token<F: FnOnce(Option<String>) -> () >(
             }
         });
 
-    let toast = adw::Toast::builder()
-        .custom_title(&gtk::Label::new(Some("\nانسخ الكود وافتح المتصفح للمصادقة.\nCopy code and open browser to authenticate.\n")))
-        .timeout(10)
-        .build();
-    toastoverlay.add_toast(toast);
+    let toastoverlay_clone = toastoverlay.clone();
+    glib::idle_add_local(move || {
+        let toast = adw::Toast::builder()
+            .custom_title(&gtk::Label::new(Some("\nانسخ الكود وافتح المتصفح للمصادقة.\nCopy code and open browser to authenticate.\n")))
+            .timeout(10)
+            .build();
+        toastoverlay_clone.add_toast(toast);
+        
+        glib::ControlFlow::Break 
+    });
+
 
     loop {
         glib::timeout_future(interval).await;
@@ -245,17 +255,32 @@ pub async fn get_access_token<F: FnOnce(Option<String>) -> () >(
             if let Some(refresh_token) = token_res.refresh_token {
                 match save_refresh_token(&refresh_token) {
                     Ok(_) => {
-                        let toast = adw::Toast::builder().title("✅ تم حفظ الجلسة بنجاح / Session saved successfully").timeout(3).build();
-                        toastoverlay.add_toast(toast);
+                        let toastoverlay_clone = toastoverlay.clone();
+                        glib::idle_add_local(move || {
+                            let toast = adw::Toast::builder().title("تم حفظ الجلسة بنجاح / Session saved successfully").timeout(3).build();
+                            toastoverlay_clone.add_toast(toast);
+                            
+                            glib::ControlFlow::Break 
+                        });
                     },
                     Err(e) => {
-                        let toast = adw::Toast::builder().title(&format!("❌ فشل حفظ الجلسة / Failed to save session: {}", e)).timeout(10).build();
-                        toastoverlay.add_toast(toast);
+                        let toastoverlay_clone = toastoverlay.clone();
+                        glib::idle_add_local(move || {
+                            let toast = adw::Toast::builder().title(&format!("فشل حفظ الجلسة / Failed to save session: {}", e)).timeout(10).build();
+                            toastoverlay_clone.add_toast(toast);
+                            
+                            glib::ControlFlow::Break 
+                        });
                     }
                 }
             } else {
-                let toast = adw::Toast::builder().title("⚠️ لم يتم استلام رمز تحديث / No refresh token received").timeout(10).build();
-                toastoverlay.add_toast(toast);
+                let toastoverlay_clone = toastoverlay.clone();
+                glib::idle_add_local(move || {
+                    let toast = adw::Toast::builder().title("لم يتم استلام رمز تحديث / No refresh token received").timeout(10).build();
+                    toastoverlay_clone.add_toast(toast);
+                    
+                    glib::ControlFlow::Break 
+                });
             }
             callback(Some(access_token));
             return ;
@@ -323,7 +348,7 @@ pub async fn process_passwords<F: Fn(Option<String>) -> ()>(
             let is_success = status >= 200 && status < 300;
 
             if is_success {
-                callback(format!("✅ نجاح / Success ({}): {}\n", current_row, email).into());
+                callback(format!("نجاح / Success ({}): {}\n", current_row, email).into());
                 success_count += 1;
             } else {
                 let json_slice: &[u8] = &response;
@@ -333,7 +358,7 @@ pub async fn process_passwords<F: Fn(Option<String>) -> ()>(
                             .as_str()
                             .unwrap_or("خطأ غير معروف / Unknown error");
                             
-                        callback(format!("❌ فشل / Failed ({}): {} - السبب/Reason: {}\n", current_row, email, error_msg).into());
+                        callback(format!("فشل / Failed ({}): {} - السبب/Reason: {}\n", current_row, email, error_msg).into());
                         failed_count += 1;
                     }
                     Err(_e) => {
@@ -349,7 +374,7 @@ pub async fn process_passwords<F: Fn(Option<String>) -> ()>(
         glib::timeout_future(Duration::from_millis(1000)).await;
     }
 
-    callback(format!("\n🎯 انتهت العملية / Process finished. النجاح/Success: {}، الفشل/Failed: {}", success_count, failed_count).into());
+    callback(format!("\n انتهت العملية / Process finished. النجاح/Success: {}، الفشل/Failed: {}", success_count, failed_count).into());
 }
 
 pub async fn simple_process_password<F: Fn(Option<String>) -> ()>(
@@ -392,7 +417,7 @@ pub async fn simple_process_password<F: Fn(Option<String>) -> ()>(
     let is_success = status >= 200 && status < 300;
 
     if is_success {
-        callback(format!("✅ نجاح / Success ({}): {}\n", current_row, email).into());
+        callback(format!("نجاح / Success ({}): {}\n", current_row, email).into());
         success_count += 1;
     } else {
         let json_slice: &[u8] = &response;
@@ -402,7 +427,7 @@ pub async fn simple_process_password<F: Fn(Option<String>) -> ()>(
                     .as_str()
                     .unwrap_or("خطأ غير معروف / Unknown error");
                     
-                callback(format!("❌ فشل / Failed ({}): {} - السبب/Reason: {}\n", current_row, email, error_msg).into());
+                callback(format!("فشل / Failed ({}): {} - السبب/Reason: {}\n", current_row, email, error_msg).into());
                 failed_count += 1;
             }
             Err(_e) => {
@@ -413,5 +438,5 @@ pub async fn simple_process_password<F: Fn(Option<String>) -> ()>(
             }
         }
     }
-    callback(format!("\n🎯 انتهت العملية / Process finished. النجاح/Success: {}، الفشل/Failed: {}", success_count, failed_count).into());
+    callback(format!("\n انتهت العملية / Process finished. النجاح/Success: {}، الفشل/Failed: {}", success_count, failed_count).into());
 }
