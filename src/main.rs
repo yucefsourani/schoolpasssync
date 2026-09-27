@@ -15,9 +15,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 
-#[cfg(target_os = "windows")]
-use open;
-
 
 #[cfg(target_os = "linux")]
 use webkit6::WebView;
@@ -67,6 +64,7 @@ pub fn append_with_smart_scroll(
     text_view: &gtk::TextView,
     text: &str,
 ) {
+    
     let buffer = text_view.buffer();
 
     let text = text.replace('\0', "");
@@ -93,6 +91,7 @@ pub fn append_with_smart_scroll(
 fn main() {    
     let app = adw::Application::builder().application_id("com.github.yucefsourani.schoolpasssync").build();
     app.connect_activate(|app| {
+        adw::StyleManager::default().set_color_scheme(adw::ColorScheme::ForceDark);
         let token = Rc::new(RefCell::new(String::new()));
         
         let mainwindow = adw::ApplicationWindow::builder().application(app).title("SchoolPassSync").build();
@@ -154,7 +153,7 @@ fn main() {
         
         let button_vbox = gtk::Box::new(gtk::Orientation::Vertical,10);
         let get_file_path_button = gtk::Button::builder()
-            .label("Open")
+            .label("Open/من ملف")
             .css_classes(["suggested-action"])
             .width_request(200)
             .height_request(50)
@@ -217,14 +216,16 @@ fn main() {
 
         let token_for_simple = Rc::clone(&token);
         let textview_for_simple = textview.clone();
+        let simple_dialog = simple_import::create_simple_import_dialog(
+            token_for_simple.clone(), 
+            textview_for_simple.clone()
+        );
         simple_import_button.connect_clicked(glib::clone!(
             #[strong] mainwindow,
+            #[strong] simple_dialog,
             move |_| {
-                let dialog = simple_import::create_simple_import_dialog(
-                    token_for_simple.clone(), 
-                    textview_for_simple.clone()
-                );
-                dialog.present(Some(&mainwindow));
+
+                simple_dialog.present(Some(&mainwindow));
             }
         ));
 
@@ -258,7 +259,12 @@ fn main() {
                                     glib::spawn_future_local(async move {
                                         process_passwords(token_run, path_run, move |result_msg| {
                                             if let Some(msg) = result_msg {
-                                                append_with_smart_scroll(&textview_run, &msg);
+                                                let textview_in = textview_run.clone();
+                                                glib::idle_add_local(move || {
+                                                    append_with_smart_scroll(&textview_in, &msg);
+                                                    glib::ControlFlow::Break 
+                                                });
+                                                
                                             }
                                         }).await;
                                     });
@@ -311,7 +317,11 @@ fn main() {
         let on_auth_success: Rc<dyn Fn(Option<String>)> = Rc::new(move |access_token: Option<String>| {
             if let Some(at) = access_token {
                 *c2_token.borrow_mut() = at;
-                main_stack_auth.set_visible_child_name("mainvbox");
+                let main_stack_auth_in = main_stack_auth.clone();
+                glib::idle_add_local(move || {
+                    main_stack_auth_in.set_visible_child_name("mainvbox");
+                    glib::ControlFlow::Break
+                });
             }
         });
 
@@ -344,13 +354,14 @@ fn main() {
             let main_stack_in = main_stack_logout.clone();
             let entry_row_in = entry_row_logout.clone();
             let toastoverlay_in = toastoverlay_logout.clone();
+            let auth_cb_in = Rc::clone(&on_auth_success_logout);
             #[cfg(target_os = "linux")]
             let webview_in = webview_logout.clone();
             #[cfg(target_os = "windows")]
             let open_btn_in = open_browser_btn_logout.clone();
             #[cfg(target_os = "windows")]
             let copy_btn_in = copy_code_btn_logout.clone();
-            let auth_cb_in = Rc::clone(&on_auth_success_logout);
+            
 
             dialog.choose(Some(&mainwindow_logout), None::<&gtk::gio::Cancellable>, move |choice| {
                 if choice == "logout" {
@@ -366,7 +377,11 @@ fn main() {
                     }
                     #[cfg(target_os = "windows")]
                     {
-                        main_stack_in.set_visible_child_name("windows_auth");
+                        let main_stack_in2 = main_stack_in.clone();
+                        glib::idle_add_local(move || {
+                            main_stack_in2.set_visible_child_name("windows_auth");
+                            glib::ControlFlow::Break 
+                        });
                         glib::spawn_future_local(async move {
                             get_access_token(open_btn_in, copy_btn_in, entry_row_in, toastoverlay_in, move |msg| { auth_cb_in(msg); }).await;
                         });
@@ -401,7 +416,11 @@ fn main() {
                     }
                     #[cfg(target_os = "windows")]
                     {
-                        main_stack.set_visible_child_name("windows_auth");
+                        let main_stack_in = main_stack.clone();
+                        glib::idle_add_local(move || {
+                            main_stack_in.set_visible_child_name("windows_auth");
+                            glib::ControlFlow::Break 
+                        });
                         get_access_token(open_browser_btn, copy_code_btn, entry_row, toastoverlay, move |msg| { on_auth_init(msg); }).await;
                     }
                 }
